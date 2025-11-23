@@ -1,6 +1,5 @@
-if (document.currentScript.parentElement) {
-  const name = document.currentScript.parentElement.getAttribute("data-script");
+(function() {
+  const name = document.currentScript.getAttribute("data-name") || "World";
 
   console.log(`Hello, ${name}!`);
-  console.log(patrick);
-}
+})();
