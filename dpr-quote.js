@@ -4,37 +4,40 @@
 
   // Fields to track in query parameters
   const TRACKED_FIELDS = [
-    'coverageFor',
-    'age',
-    'province',
-    'coverageTier',
-    'benefits',
-    'preExisting',
-    'preExistingCoverage'
+    'CoverageType',
+    'Dependents',
+    'Age',
+    'Province',
+    'CoverageTier',
+    'InsuranceReason',
+    'PreExisting',
+    'PreExistingCoverage'
   ];
 
   // Fields to save to localStorage (non-personal, persistent)
   const LOCAL_STORAGE_FIELDS = [
-    'coverageFor',
-    'age',
-    'province',
-    'coverageTier',
-    'benefits',
-    'preExisting',
-    'preExistingCoverage'
+    'CoverageType',
+    'Dependents',
+    'Age',
+    'Province',
+    'CoverageTier',
+    'InsuranceReason',
+    'PreExisting',
+    'PreExistingCoverage'
   ];
 
   // Fields to save to sessionStorage (personal, session-only)
   const SESSION_STORAGE_FIELDS = [
-    'firstName',
-    'lastName',
-    'phoneNumber',
-    'email',
-    'privacyPolicy',
-    'marketingPermission'
+    'FirstName',
+    'LastName',
+    'PhoneNumber',
+    'EmailAddress',
+    'PrivacyPolicy',
+    'MarketingPermission'
   ];
 
-  const STORAGE_KEY = 'dpr_data';
+  const LOCAL_STORAGE_KEY = 'dpr_local_data';
+  const SESSION_STORAGE_KEY = 'dpr_session_data';
 
   /**
    * Parse current URL query parameters into an object
@@ -223,7 +226,7 @@
     });
 
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
       console.warn('Failed to save to localStorage:', e);
     }
@@ -244,7 +247,7 @@
     });
 
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
       console.warn('Failed to save to sessionStorage:', e);
     }
