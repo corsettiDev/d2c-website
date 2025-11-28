@@ -872,6 +872,12 @@
       if (result) {
         console.log('Page load API call succeeded');
         hideErrorBar();
+
+        // Populate chart with results
+        const resultsData = getResultsData();
+        if (resultsData) {
+          fillChart(resultsData);
+        }
       } else {
         console.error('Page load API call failed');
         showErrorBar();
@@ -913,6 +919,12 @@
       if (result) {
         console.log('Modal API call succeeded');
         hideErrorBar();
+
+        // Populate chart with results
+        const resultsData = getResultsData();
+        if (resultsData) {
+          fillChart(resultsData);
+        }
       } else {
         console.error('Modal API call failed');
         showErrorBar();
@@ -935,6 +947,191 @@
       button.textContent = originalText;
       button.disabled = false;
     }
+  }
+
+  // ============================================================
+  // RESULTS DISPLAY
+  // ============================================================
+
+  /**
+   * Reset all plan prices and buttons to default hidden state
+   */
+  function resetChart() {
+    const planItems = document.querySelectorAll('[dpr-results-plan]');
+
+    planItems.forEach(planItem => {
+      // Hide/reset price element
+      const priceEl = planItem.querySelector('[dpr-results-price="price"]');
+      if (priceEl) {
+        priceEl.textContent = '';
+        priceEl.style.display = 'none';
+      }
+
+      // Hide/reset button
+      const btn = planItem.querySelector('[dpr-results-apply="button"]');
+      if (btn) {
+        btn.style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = 'Apply Now';
+        delete btn.dataset.confirmation;
+      }
+    });
+
+    console.log(`Reset ${planItems.length} plan items`);
+  }
+
+  /**
+   * Fetch application URL from API using confirmation number
+   * @param {string} confirmationNumber - The quote confirmation number
+   * @returns {Promise<string>} Application URL
+   */
+  async function getApplicationUrl(confirmationNumber) {
+    const res = await fetch(
+      `https://qagsd2cins.greenshield.ca/applicationUrl/${confirmationNumber}`
+    );
+
+    if (!res.ok) {
+      throw new Error(`Network error: ${res.status}`);
+    }
+
+    const raw = await res.text();
+    let url;
+
+    try {
+      url = JSON.parse(raw).ApplicationUrl;
+    } catch {
+      url = raw;
+    }
+
+    if (!url || !url.startsWith('http')) {
+      throw new Error('Invalid URL received');
+    }
+
+    return url;
+  }
+
+  /**
+   * Decorate URLs with GTM auto-linker for cross-domain tracking
+   * @param {string} url - The URL to decorate
+   * @returns {string} Decorated URL or original if decoration fails
+   */
+  function decorateWithGtmAutoLinker(url) {
+    try {
+      if (typeof gtag === 'undefined') {
+        return url;
+      }
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.style.position = 'absolute';
+      a.style.left = '-9999px';
+      document.body.appendChild(a);
+
+      a.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+
+      const decorated = a.href;
+      a.remove();
+      return decorated || url;
+    } catch (err) {
+      console.warn('Auto-linker decoration failed, using raw URL', err);
+      return url;
+    }
+  }
+
+  /**
+   * Retrieve results data from sessionStorage
+   * @returns {Object|null} Parsed results data or null
+   */
+  function getResultsData() {
+    try {
+      const raw = sessionStorage.getItem('dpr_results_data');
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('Failed to read results data:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Populate plan prices and wire up Apply Now buttons
+   * @param {Object} resultsData - Full dpr_results_data from sessionStorage
+   */
+  function fillChart(resultsData) {
+    resetChart();
+
+    // Extract PlanQuotes from results
+    const quotes = resultsData?.results?.PlanQuotes || [];
+
+    if (!quotes || quotes.length === 0) {
+      console.warn('No quote data available to populate chart');
+      return;
+    }
+
+    console.log(`Populating ${quotes.length} plan quotes`);
+
+    quotes.forEach(quote => {
+      // Find matching plan item by PlanName
+      const planItem = document.querySelector(`[dpr-results-plan="${quote.PlanName}"]`);
+
+      if (!planItem) {
+        console.warn(`No matching plan element found for: ${quote.PlanName}`);
+        return;
+      }
+
+      // Populate price
+      const priceEl = planItem.querySelector('[dpr-results-price="price"]');
+      if (priceEl) {
+        priceEl.textContent = `$${quote.Premium}`;
+        priceEl.style.display = 'block';
+      }
+
+      // Check for hospital accommodation option (prepare for future use)
+      const hospitalOption = quote.QuoteOptions?.find(
+        option => option.OptionName === 'Hospital Accommodation'
+      );
+
+      if (hospitalOption) {
+        console.log(`Hospital accommodation available for ${quote.PlanName}: $${hospitalOption.OptionPremium}`);
+        // Store for future use but don't display yet (no frontend)
+        planItem.dataset.hospitalOption = JSON.stringify(hospitalOption);
+      }
+
+      // Wire up Apply Now button
+      const btn = planItem.querySelector('[dpr-results-apply="button"]');
+      if (btn) {
+        btn.dataset.confirmation = quote.ConfirmationNumber;
+        btn.style.display = 'block';
+
+        // Clone and replace to remove existing listeners
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
+        newBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+
+          const originalText = newBtn.textContent;
+          newBtn.disabled = true;
+          newBtn.textContent = 'Loading...';
+
+          try {
+            const url = await getApplicationUrl(newBtn.dataset.confirmation);
+            const finalUrl = decorateWithGtmAutoLinker(url);
+
+            // Short delay for GA hit to flush
+            setTimeout(() => {
+              window.location.assign(finalUrl);
+            }, 200);
+          } catch (err) {
+            console.error('Error getting application URL:', err);
+            newBtn.textContent = 'Error – Try Again';
+            newBtn.disabled = false;
+          }
+        });
+      }
+    });
+
+    console.log('Chart population complete');
   }
 
   // ============================================================
