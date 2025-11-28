@@ -9,6 +9,15 @@
   // Flag to prevent infinite loop when syncing fields
   let isSyncing = false;
 
+  // Temporary storage for modal field values (for cancel/reset)
+  let savedModalValues = null;
+
+  // Flag to track if form is being submitted (prevents reset on modal close)
+  let isFormSubmitting = false;
+
+  // Redirect URL for when required fields are missing
+  const redirectUrl = document.currentScript.getAttribute("data-url") || "";
+
   // ============================================================
   // STORAGE HELPER FUNCTIONS
   // ============================================================
@@ -96,6 +105,70 @@
       console.warn('Failed to update sessionStorage:', e);
       return false;
     }
+  }
+
+  // ============================================================
+  // FIELD VALIDATION
+  // ============================================================
+
+  /**
+   * Check if a field value is missing (null, undefined, or empty string)
+   * @param {*} value - The value to check
+   * @returns {boolean} True if value is missing, false otherwise
+   */
+  function isFieldMissing(value) {
+    return value == null || value === '';
+  }
+
+  /**
+   * Validate that all required fields exist in localStorage
+   * Applies conditional logic based on field values
+   * @returns {boolean} True if all required fields exist, false otherwise
+   */
+  function validateRequiredFields() {
+    const localData = getLocalStorageData();
+
+    if (!localData) {
+      console.warn('No localStorage data found');
+      return false;
+    }
+
+    // Always required fields
+    const alwaysRequired = ['CoverageType', 'CoverageTier', 'InsuranceReason', 'Age', 'Province'];
+
+    for (const field of alwaysRequired) {
+      if (isFieldMissing(localData[field])) {
+        console.warn(`Required field missing: ${field}`);
+        return false;
+      }
+    }
+
+    // Conditional: Dependents required unless CoverageType is 0
+    if (localData.CoverageType != 0) {
+      if (isFieldMissing(localData.Dependents)) {
+        console.warn('Required field missing: Dependents (CoverageType is not 0)');
+        return false;
+      }
+    }
+
+    // Conditional: PreExisting not required if InsuranceReason is 2
+    if (localData.InsuranceReason != 2) {
+      if (isFieldMissing(localData.PreExisting)) {
+        console.warn('Required field missing: PreExisting (InsuranceReason is not 2)');
+        return false;
+      }
+    }
+
+    // Conditional: PreExistingCoverage not required if InsuranceReason is 2 OR if PreExisting is "no"
+    if (localData.InsuranceReason != 2 && localData.PreExisting != 'no') {
+      if (isFieldMissing(localData.PreExistingCoverage)) {
+        console.warn('Required field missing: PreExistingCoverage (InsuranceReason is not 2 and PreExisting is not "no")');
+        return false;
+      }
+    }
+
+    console.log('All required fields validated successfully');
+    return true;
   }
 
   // ============================================================
@@ -391,6 +464,137 @@
   }
 
   // ============================================================
+  // MODAL FORM RESET
+  // ============================================================
+
+  /**
+   * Save current values of tracked fields when modal opens
+   * @param {HTMLFormElement} formEl - The form element
+   */
+  function saveModalFieldValues(formEl) {
+    savedModalValues = {};
+
+    const fieldsToSave = ['CoverageType', 'Dependents', 'Age', 'Province'];
+
+    fieldsToSave.forEach(fieldName => {
+      const value = getFieldValue(formEl, fieldName);
+      savedModalValues[fieldName] = value;
+    });
+
+    console.log('Saved modal values:', savedModalValues);
+  }
+
+  /**
+   * Restore saved values to tracked fields when cancel is clicked
+   * @param {HTMLFormElement} formEl - The form element
+   */
+  function resetModalFieldValues(formEl) {
+    if (!savedModalValues) {
+      console.warn('No saved modal values to restore');
+      return;
+    }
+
+    console.log('Resetting modal values to:', savedModalValues);
+
+    // Prevent syncing loop
+    isSyncing = true;
+
+    try {
+      Object.entries(savedModalValues).forEach(([fieldName, value]) => {
+        // Restore form field value
+        setFieldValue(formEl, fieldName, value);
+
+        // Update localStorage
+        updateLocalStorage(fieldName, value);
+
+        // Sync all fields with same name
+        syncAllFieldsWithName(fieldName, value);
+      });
+
+      // Update URL params
+      syncAllParamsFromStorage();
+    } finally {
+      isSyncing = false;
+    }
+
+    // Clear saved values
+    savedModalValues = null;
+  }
+
+  /**
+   * Handle quote modal close event
+   * Reset form values unless form was submitted
+   */
+  function handleQuoteModalClose() {
+    // If form was submitted, don't reset
+    if (isFormSubmitting) {
+      console.log('Form submitted - not resetting values');
+      isFormSubmitting = false; // Reset flag
+      return;
+    }
+
+    // Form was cancelled/closed - reset values
+    console.log('Modal closed without submission - resetting values');
+
+    const form = document.querySelector('[data-form-trigger="quote-form"]');
+    if (form) {
+      resetModalFieldValues(form);
+    }
+  }
+
+  /**
+   * Attach click listeners to modal trigger buttons and close event
+   */
+  function setupModalTriggerListeners() {
+    // Find the quote modal dialog element
+    const modal = document.querySelector('[data-form-trigger="quote-modal"]');
+    const form = document.querySelector('[data-form-trigger="quote-form"]');
+
+    if (!modal) {
+      console.warn('Quote modal not found');
+      return;
+    }
+
+    // Handle modal open button
+    const openButton = document.querySelector('[data-form-trigger="open-quote-modal"]');
+    if (openButton) {
+      openButton.addEventListener('click', () => {
+        if (form) {
+          saveModalFieldValues(form);
+        } else {
+          console.warn('Quote form not found');
+        }
+      });
+    }
+
+    // Handle get-quote (submit) button - trigger API call
+    const submitButton = document.querySelector('[data-form-trigger="get-quote"]');
+    if (submitButton) {
+      submitButton.addEventListener('click', async (e) => {
+        e.preventDefault();
+        isFormSubmitting = true;
+        console.log('Form submit clicked - triggering API call');
+
+        await handleModalButtonClick();
+      });
+    }
+
+    // Handle cancel button - can keep for explicit cancel action
+    const cancelButton = document.querySelector('[data-form-trigger="cancel"]');
+    if (cancelButton) {
+      cancelButton.addEventListener('click', () => {
+        if (form) {
+          resetModalFieldValues(form);
+        }
+        // Note: Modal library will call dialog.close() which triggers close event
+      });
+    }
+
+    // Handle dialog close event (catches all close methods)
+    modal.addEventListener('close', handleQuoteModalClose);
+  }
+
+  // ============================================================
   // PAYLOAD BUILDING
   // ============================================================
 
@@ -577,6 +781,163 @@
   }
 
   // ============================================================
+  // UI STATE MANAGEMENT
+  // ============================================================
+
+  /**
+   * Create and display skeleton loaders on all marked elements
+   */
+  function showSkeletonLoaders() {
+    const skeletonElements = document.querySelectorAll('[dpr-code-skeleton]');
+
+    skeletonElements.forEach(element => {
+      // Skip if skeleton already exists
+      if (element.querySelector('.skeleton-loader')) return;
+
+      const skeletonDiv = document.createElement('div');
+      skeletonDiv.classList.add('skeleton-loader');
+      element.style.position = 'relative';
+      element.appendChild(skeletonDiv);
+    });
+
+    console.log(`Skeleton loaders shown on ${skeletonElements.length} elements`);
+  }
+
+  /**
+   * Remove all skeleton loaders from the page
+   */
+  function hideSkeletonLoaders() {
+    const skeletonLoaders = document.querySelectorAll('.skeleton-loader');
+
+    skeletonLoaders.forEach(loader => {
+      loader.remove();
+    });
+
+    console.log(`Removed ${skeletonLoaders.length} skeleton loaders`);
+  }
+
+  /**
+   * Display the error bar to user
+   */
+  function showErrorBar() {
+    const errorBar = document.querySelector('[dpr-results="error-bar"]');
+
+    if (!errorBar) {
+      console.warn('Error bar element not found');
+      return;
+    }
+
+    errorBar.style.display = 'block';
+    console.log('Error bar displayed');
+  }
+
+  /**
+   * Hide the error bar
+   */
+  function hideErrorBar() {
+    const errorBar = document.querySelector('[dpr-results="error-bar"]');
+
+    if (!errorBar) return;
+
+    errorBar.style.display = 'none';
+    console.log('Error bar hidden');
+  }
+
+  /**
+   * Handle API call on page load with skeleton loaders
+   * Called automatically during initialization
+   */
+  async function handlePageLoadApiCall() {
+    console.log('Starting page load API call...');
+
+    // Step 1: Validate required fields
+    if (!validateRequiredFields()) {
+      console.error('Missing required fields - redirecting to quote form');
+      if (redirectUrl) {
+        window.location.href = redirectUrl;
+      } else {
+        console.warn('No redirect URL configured - cannot redirect');
+      }
+      return;
+    }
+
+    // Step 2: Show skeleton loaders
+    showSkeletonLoaders();
+
+    // Step 3: Call API
+    try {
+      const result = await loadAndFetchQuotes();
+
+      // Step 4: Handle result
+      if (result) {
+        console.log('Page load API call succeeded');
+        hideErrorBar();
+      } else {
+        console.error('Page load API call failed');
+        showErrorBar();
+      }
+    } catch (error) {
+      console.error('Page load API call error:', error);
+      showErrorBar();
+    } finally {
+      // Step 5: Always hide skeleton loaders
+      hideSkeletonLoaders();
+    }
+  }
+
+  /**
+   * Handle API call triggered by modal button click
+   * Manages button state and modal closure
+   */
+  async function handleModalButtonClick() {
+    const button = document.querySelector('[data-form-trigger="get-quote"]');
+    const modal = document.querySelector('[data-form-trigger="quote-modal"]');
+
+    if (!button) {
+      console.warn('Get quote button not found');
+      return;
+    }
+
+    // Step 1: Save original button state
+    const originalText = button.textContent;
+
+    // Step 2: Update button to loading state
+    button.textContent = 'Loading...';
+    button.disabled = true;
+
+    // Step 3: Call API
+    try {
+      const result = await loadAndFetchQuotes();
+
+      // Step 4: Handle result
+      if (result) {
+        console.log('Modal API call succeeded');
+        hideErrorBar();
+      } else {
+        console.error('Modal API call failed');
+        showErrorBar();
+      }
+
+      // Close modal on both success and failure
+      if (modal && modal.close) {
+        modal.close();
+      }
+    } catch (error) {
+      console.error('Modal API call error:', error);
+      showErrorBar();
+
+      // Close modal even on error
+      if (modal && modal.close) {
+        modal.close();
+      }
+    } finally {
+      // Step 5: Restore button state
+      button.textContent = originalText;
+      button.disabled = false;
+    }
+  }
+
+  // ============================================================
   // INITIALIZATION
   // ============================================================
 
@@ -589,6 +950,12 @@
     // Initialize value management system
     prefillAllForms();
     setupFormChangeListeners();
+
+    // Setup modal trigger listeners
+    setupModalTriggerListeners();
+
+    // Trigger API call on page load
+    handlePageLoadApiCall();
   }
 
   // Run initialization when DOM is ready
