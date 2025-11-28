@@ -16,7 +16,10 @@
   let isFormSubmitting = false;
 
   // Redirect URL for when required fields are missing
-  const redirectUrl = document.currentScript.getAttribute("data-url") || "";
+  const redirectUrl = document.currentScript.getAttribute("data-redirect-url") || "";
+  
+  // Root API URL
+  const rootApiURL = document.currentScript.getAttribute("data-api-url") || "https://qagsd2cins.greenshield.ca";
 
   // ============================================================
   // STORAGE HELPER FUNCTIONS
@@ -427,6 +430,12 @@
       if (!sessionOnlyFields.has(fieldName)) {
         syncAllParamsFromStorage();
       }
+
+      // Trigger sorting/filtering update if filter field changed
+      const filterFields = ['InsuranceReason', 'CoverageTier', 'PreExisting', 'PreExistingCoverage', 'plans'];
+      if (filterFields.includes(fieldName)) {
+        applyPlanVisibilityAndOrder();
+      }
     } finally {
       isSyncing = false;
     }
@@ -678,7 +687,8 @@
    */
   async function fetchQuotes(payload) {
     try {
-      const res = await fetch('https://qagsd2cins.greenshield.ca/quoteset', {
+      // const res = await fetch('https://qagsd2cins.greenshield.ca/quoteset', {
+      const res = await fetch(`${rootApiURL}/quoteset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -950,6 +960,183 @@
   }
 
   // ============================================================
+  // PLAN SORTING & FILTERING
+  // ============================================================
+
+  /**
+   * Determine the top 3 recommended plans based on filter criteria
+   * @param {Object} filterState - Current filter values
+   * @param {number|string} filterState.InsuranceReason - 0, 1, or 2
+   * @param {string} filterState.CoverageTier - 'basic' or 'comprehensive'
+   * @param {string} filterState.PreExisting - 'yes' or 'no' or null
+   * @param {string} filterState.PreExistingCoverage - 'yes' or 'no' or null
+   * @returns {string[]} Array of 3 plan names in priority order
+   */
+  function determineTopThreePlans(filterState) {
+    const { InsuranceReason, CoverageTier, PreExisting, PreExistingCoverage } = filterState;
+
+    // Handle InsuranceReason == 2 (special case - PreExisting doesn't matter)
+    if (InsuranceReason == 2) {
+      if (CoverageTier == 'basic') {
+        return ['ZONE 2', 'ZONE 3', 'ZONE FUNDAMENTAL PLAN'];
+      } else if (CoverageTier == 'comprehensive') {
+        return ['ZONE 3', 'ZONE 2', 'LINK 4'];
+      }
+    }
+
+    // Handle InsuranceReason == 1
+    if (InsuranceReason == 1) {
+      if (CoverageTier == 'basic') {
+        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+          return ['LINK 1', 'LINK 2', 'ZONE FUNDAMENTAL PLAN'];
+        } else {
+          // PreExisting == 'no' OR PreExistingCoverage == 'no'
+          return ['ZONE 4', 'LINK 1', 'LINK 2'];
+        }
+      } else if (CoverageTier == 'comprehensive') {
+        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+          return ['LINK 1', 'LINK 4', 'LINK 3'];
+        } else {
+          // PreExisting == 'no' OR PreExistingCoverage == 'no'
+          return ['ZONE 4', 'LINK 1', 'ZONE 5'];
+        }
+      }
+    }
+
+    // Handle InsuranceReason == 0
+    if (InsuranceReason == 0) {
+      if (CoverageTier == 'basic') {
+        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+          return ['LINK 2', 'LINK 3', 'ZONE FUNDAMENTAL PLAN'];
+        } else {
+          // PreExisting == 'no' OR PreExistingCoverage == 'no'
+          return ['ZONE 5', 'LINK 3', 'LINK 2'];
+        }
+      } else if (CoverageTier == 'comprehensive') {
+        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+          return ['LINK 4', 'LINK 3', 'LINK 2'];
+        } else {
+          // PreExisting == 'no' OR PreExistingCoverage == 'no'
+          return ['ZONE 6', 'ZONE 5', 'LINK 4'];
+        }
+      }
+    }
+
+    // Fallback - should never reach here if data is valid
+    console.warn('Unknown filter combination:', filterState);
+    return [];
+  }
+
+  /**
+   * Get current filter state from localStorage
+   * @returns {Object|null} Current filter values or null if unavailable
+   */
+  function getCurrentFilterState() {
+    const localData = getLocalStorageData();
+
+    if (!localData) {
+      console.warn('No localStorage data available for filtering');
+      return null;
+    }
+
+    return {
+      InsuranceReason: localData.InsuranceReason,
+      CoverageTier: localData.CoverageTier,
+      PreExisting: localData.PreExisting,
+      PreExistingCoverage: localData.PreExistingCoverage
+    };
+  }
+
+  /**
+   * Apply plan visibility and ordering based on current filter state
+   * This is the main orchestration function that:
+   * 1. Determines top 3 plans based on filters
+   * 2. Applies visibility based on 'plans' mode (suggested vs all)
+   * 3. Reorders DOM so top 3 always appear first
+   */
+  function applyPlanVisibilityAndOrder() {
+    // Step 1: Get current filter state
+    const filterState = getCurrentFilterState();
+    if (!filterState) return;
+
+    // Step 2: Determine top 3 plans
+    const topThreePlans = determineTopThreePlans(filterState);
+    if (!topThreePlans || topThreePlans.length === 0) {
+      console.warn('Could not determine top 3 plans');
+      return;
+    }
+
+    console.log('Top 3 plans for current filters:', topThreePlans);
+
+    // Step 3: Get current 'plans' field value (suggested vs all)
+    const localData = getLocalStorageData();
+    const plansMode = localData?.plans || 'suggested'; // Default to 'suggested'
+
+    // Step 4: Get all plan elements
+    const allPlanElements = document.querySelectorAll('[dpr-results-plan]');
+
+    if (allPlanElements.length === 0) {
+      console.warn('No plan elements found on page');
+      return;
+    }
+
+    // Step 5: Convert NodeList to Array and categorize
+    const planArray = Array.from(allPlanElements);
+    const planParent = planArray[0]?.parentElement;
+
+    if (!planParent) {
+      console.warn('Could not find plan parent container');
+      return;
+    }
+
+    // Step 6: Separate top 3 from others
+    const topThreeElements = [];
+    const otherElements = [];
+
+    planArray.forEach(planEl => {
+      const planName = planEl.getAttribute('dpr-results-plan');
+      if (topThreePlans.includes(planName)) {
+        topThreeElements.push(planEl);
+      } else {
+        otherElements.push(planEl);
+      }
+    });
+
+    // Step 7: Sort top three elements by priority order
+    topThreeElements.sort((a, b) => {
+      const aName = a.getAttribute('dpr-results-plan');
+      const bName = b.getAttribute('dpr-results-plan');
+      return topThreePlans.indexOf(aName) - topThreePlans.indexOf(bName);
+    });
+
+    // Step 8: Apply visibility based on mode
+    if (plansMode === 'suggested') {
+      // Show only top 3
+      topThreeElements.forEach(el => {
+        el.style.display = '';  // Reset to default (likely 'block' or 'flex')
+      });
+      otherElements.forEach(el => {
+        el.style.display = 'none';
+      });
+    } else {
+      // Show all plans
+      planArray.forEach(el => {
+        el.style.display = '';  // Reset all to visible
+      });
+    }
+
+    // Step 9: Reorder DOM (always put top 3 first)
+    // Remove all plans from parent
+    planArray.forEach(el => el.remove());
+
+    // Re-insert in correct order: top 3 first, then others
+    topThreeElements.forEach(el => planParent.appendChild(el));
+    otherElements.forEach(el => planParent.appendChild(el));
+
+    console.log(`Applied visibility mode: ${plansMode}, reordered ${planArray.length} plans`);
+  }
+
+  // ============================================================
   // RESULTS DISPLAY
   // ============================================================
 
@@ -987,7 +1174,8 @@
    */
   async function getApplicationUrl(confirmationNumber) {
     const res = await fetch(
-      `https://qagsd2cins.greenshield.ca/applicationUrl/${confirmationNumber}`
+      // `https://qagsd2cins.greenshield.ca/applicationUrl/${confirmationNumber}`
+      `${rootApiURL}/applicationUrl/${confirmationNumber}`
     );
 
     if (!res.ok) {
@@ -1132,6 +1320,9 @@
     });
 
     console.log('Chart population complete');
+
+    // Apply sorting and filtering after chart population
+    applyPlanVisibilityAndOrder();
   }
 
   // ============================================================
