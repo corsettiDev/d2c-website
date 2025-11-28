@@ -854,6 +854,32 @@
   }
 
   /**
+   * Hide all dynamic content blocks (prices, apply buttons, etc.)
+   */
+  function hideDynamicBlocks() {
+    const dynamicBlocks = document.querySelectorAll('[data-results="dynamic-block"]');
+
+    dynamicBlocks.forEach(block => {
+      block.style.display = 'none';
+    });
+
+    console.log(`Hidden ${dynamicBlocks.length} dynamic blocks`);
+  }
+
+  /**
+   * Show all dynamic content blocks
+   */
+  function showDynamicBlocks() {
+    const dynamicBlocks = document.querySelectorAll('[data-results="dynamic-block"]');
+
+    dynamicBlocks.forEach(block => {
+      block.style.display = '';  // Reset to CSS default
+    });
+
+    console.log(`Shown ${dynamicBlocks.length} dynamic blocks`);
+  }
+
+  /**
    * Handle API call on page load with skeleton loaders
    * Called automatically during initialization
    */
@@ -882,6 +908,7 @@
       if (result) {
         console.log('Page load API call succeeded');
         hideErrorBar();
+        showDynamicBlocks();
 
         // Populate chart with results
         const resultsData = getResultsData();
@@ -891,10 +918,12 @@
       } else {
         console.error('Page load API call failed');
         showErrorBar();
+        hideDynamicBlocks();
       }
     } catch (error) {
       console.error('Page load API call error:', error);
       showErrorBar();
+      hideDynamicBlocks();
     } finally {
       // Step 5: Always hide skeleton loaders
       hideSkeletonLoaders();
@@ -929,6 +958,7 @@
       if (result) {
         console.log('Modal API call succeeded');
         hideErrorBar();
+        showDynamicBlocks();
 
         // Populate chart with results
         const resultsData = getResultsData();
@@ -938,6 +968,7 @@
       } else {
         console.error('Modal API call failed');
         showErrorBar();
+        hideDynamicBlocks();
       }
 
       // Close modal on both success and failure
@@ -947,6 +978,7 @@
     } catch (error) {
       console.error('Modal API call error:', error);
       showErrorBar();
+      hideDynamicBlocks();
 
       // Close modal even on error
       if (modal && modal.close) {
