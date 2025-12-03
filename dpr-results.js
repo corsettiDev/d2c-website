@@ -1313,7 +1313,7 @@
       if (applyBtn) applyBtn.style.display = 'none';
     } else {
       // Other provinces: Show apply button, hide call button
-      if (applyBtn) applyBtn.style.display = 'block';
+      if (applyBtn) applyBtn.style.display = 'flex';
       if (quebecBtn) quebecBtn.style.display = 'none';
     }
   }
