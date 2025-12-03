@@ -1395,7 +1395,9 @@
         // Populate text line
         const textLine = checkboxWrapper.querySelector('[dpr-quote-hospital="text-line"]');
         if (textLine) {
-          textLine.textContent = `${hospitalAccommodationText}$${hospitalOption.OptionPremium}`;
+          const price = parseFloat(hospitalOption.OptionPremium);
+          const priceDisplay = price % 1 === 0 ? price.toFixed(0) : price.toFixed(2);
+          textLine.textContent = `${hospitalAccommodationText}$${priceDisplay}`;
         }
 
         // Wire up checkbox handler
