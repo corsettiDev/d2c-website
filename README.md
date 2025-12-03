@@ -72,10 +72,15 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
   - `CoverageTier` (basic or comprehensive)
   - `PreExisting` (yes or no)
   - `PreExistingCoverage` (yes or no)
+- **Granular Plan Ordering:** Separate ordering logic for distinct user scenarios:
+  - Users without pre-existing conditions (`PreExisting == 'no'`)
+  - Users with pre-existing conditions and current coverage (`PreExisting == 'yes' && PreExistingCoverage == 'yes'`)
+  - Users with pre-existing conditions but no current coverage (`PreExisting == 'yes' && PreExistingCoverage == 'no'`)
 - **Display Modes:**
   - `plans=suggested` - Shows only top 3 recommended plans (default)
   - `plans=all` - Shows all available plans
 - **Dynamic Reordering:** Top 3 plans always appear first in DOM order
+- **Error Resilience:** Filter and sorting logic applies even when API calls fail, ensuring consistent plan ordering regardless of API availability
 
 #### Modal Quote Update System
 - Modal opens → Saves current field values
@@ -86,7 +91,9 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 #### UI State Management
 - **Skeleton Loaders:** Display on elements with `[dpr-code-skeleton]` attribute during API calls
 - **Error Bar:** Shows/hides element with `[dpr-results="error-bar"]` on API failures
+- **Dynamic Content Blocks:** Elements with `[data-results="dynamic-block"]` hide on API failure (prices/buttons)
 - **Loading States:** Button text updates and disabling during async operations
+- **Error State Filtering:** Plan filtering and ordering still applies when API fails, showing filtered plan structure with error message
 
 #### Application URL Flow
 1. User clicks "Apply Now" button
@@ -114,6 +121,7 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 - `[dpr-results-apply="button"]` - Apply Now button
 - `[dpr-code-skeleton]` - Elements that should show skeleton loader during API calls
 - `[dpr-results="error-bar"]` - Error message container
+- `[data-results="dynamic-block"]` - Content blocks that hide when API fails (e.g., prices, buttons)
 
 *Filter Fields:*
 - Form fields with names: `InsuranceReason`, `CoverageTier`, `PreExisting`, `PreExistingCoverage`, `plans`
@@ -123,7 +131,7 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 - `data-api-url` - Root API URL (default: `https://qagsd2cins.greenshield.ca`)
 
 **Plan Names (must match API response):**
-- ZONE 2, ZONE 3, ZONE 4, ZONE 5, ZONE 6
+- ZONE 2, ZONE 3, ZONE 4, ZONE 5, ZONE 6, ZONE 7
 - ZONE FUNDAMENTAL PLAN
 - LINK 1, LINK 2, LINK 3, LINK 4
 
@@ -364,4 +372,5 @@ if (customInput) {
 - Non-personal data (coverage preferences) persists in localStorage across sessions
 - URL parameters only contain non-personal data
 - Quote results automatically refresh when filter fields change
-- Plan sorting algorithm handles all combinations of InsuranceReason, CoverageTier, and PreExisting conditions
+- Plan sorting and filtering works independently of API availability - filters apply even when API calls fail
+- Plan sorting algorithm handles all combinations of InsuranceReason, CoverageTier, and PreExisting conditions with granular ordering for distinct user scenarios
