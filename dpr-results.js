@@ -919,11 +919,17 @@
         console.error('Page load API call failed');
         showErrorBar();
         hideDynamicBlocks();
+
+        // Apply filters even without API data
+        applyPlanVisibilityAndOrder();
       }
     } catch (error) {
       console.error('Page load API call error:', error);
       showErrorBar();
       hideDynamicBlocks();
+
+      // Apply filters even without API data
+      applyPlanVisibilityAndOrder();
     } finally {
       // Step 5: Always hide skeleton loaders
       hideSkeletonLoaders();
@@ -969,6 +975,9 @@
         console.error('Modal API call failed');
         showErrorBar();
         hideDynamicBlocks();
+
+        // Apply filters even without API data
+        applyPlanVisibilityAndOrder();
       }
 
       // Close modal on both success and failure
@@ -979,6 +988,9 @@
       console.error('Modal API call error:', error);
       showErrorBar();
       hideDynamicBlocks();
+
+      // Apply filters even without API data
+      applyPlanVisibilityAndOrder();
 
       // Close modal even on error
       if (modal && modal.close) {
@@ -1040,16 +1052,23 @@
       if (CoverageTier == 'basic') {
         if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
           return ['LINK 2', 'LINK 3', 'ZONE FUNDAMENTAL PLAN'];
+        } else if (PreExisting == 'no') {
+          // User does not have pre-existing conditions
+          return ['ZONE 5', 'LINK 2', 'LINK 3'];
         } else {
-          // PreExisting == 'no' OR PreExistingCoverage == 'no'
+          // PreExisting == 'yes' && PreExistingCoverage == 'no'
+          // User has pre-existing conditions but no current coverage
           return ['ZONE 5', 'LINK 3', 'LINK 2'];
         }
       } else if (CoverageTier == 'comprehensive') {
         if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
           return ['LINK 4', 'LINK 3', 'LINK 2'];
+        } 
+        else if (PreExisting == 'no') {
+          return ['ZONE 7', 'ZONE 6', 'ZONE 5'];
         } else {
           // PreExisting == 'no' OR PreExistingCoverage == 'no'
-          return ['ZONE 6', 'ZONE 5', 'LINK 4'];
+          return ['ZONE 7', 'ZONE 6', 'LINK 4'];
         }
       }
     }
