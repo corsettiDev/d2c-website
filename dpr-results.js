@@ -615,14 +615,16 @@
   function buildPayload() {
     // Retrieve data from all storage sources
     const localData = getLocalStorageData();
-    const sessionData = getSessionStorageData();
     const attributionData = getAttributionData();
 
     // Validate required data exists
-    if (!localData || !sessionData) {
-      console.error('Missing required quote data in storage');
+    if (!localData) {
+      console.error('Missing required quote data in localStorage');
       return null;
     }
+
+    // SessionStorage is optional - personal fields will be null if missing
+    const sessionData = getSessionStorageData() || {};
 
     // Build the payload with proper type conversions
     const payload = {
@@ -754,11 +756,16 @@
     try {
       // Step 1: Retrieve stored data
       const localData = getLocalStorageData();
-      const sessionData = getSessionStorageData();
 
-      if (!localData || !sessionData) {
-        console.error('Missing required quote data. Cannot fetch quotes.');
+      if (!localData) {
+        console.error('Missing required quote data in localStorage. Cannot fetch quotes.');
         return null;
+      }
+
+      // SessionStorage is optional - log if missing but continue
+      const sessionData = getSessionStorageData();
+      if (!sessionData) {
+        console.log('No sessionStorage data found - personal fields will be null in API request');
       }
 
       // Step 2: Build payload
