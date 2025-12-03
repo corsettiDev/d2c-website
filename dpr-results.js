@@ -1213,6 +1213,12 @@
         btn.textContent = 'Apply Now';
         delete btn.dataset.confirmation;
       }
+
+      // Hide/reset Quebec call button
+      const quebecBtn = planItem.querySelector('[dpr-results-quebec="call"]');
+      if (quebecBtn) {
+        quebecBtn.style.display = 'none';
+      }
     });
 
     console.log(`Reset ${planItems.length} plan items`);
@@ -1293,11 +1299,36 @@
   }
 
   /**
+   * Show/hide plan buttons based on Province value
+   * @param {HTMLElement} planItem - The plan container element
+   * @param {boolean} isQuebec - Whether Province is 10 (Quebec)
+   */
+  function setPlanButtonVisibility(planItem, isQuebec) {
+    const applyBtn = planItem.querySelector('[dpr-results-apply="button"]');
+    const quebecBtn = planItem.querySelector('[dpr-results-quebec="call"]');
+
+    if (isQuebec) {
+      // Quebec: Show call button, hide apply button
+      if (quebecBtn) quebecBtn.style.display = 'block';
+      if (applyBtn) applyBtn.style.display = 'none';
+    } else {
+      // Other provinces: Show apply button, hide call button
+      if (applyBtn) applyBtn.style.display = 'block';
+      if (quebecBtn) quebecBtn.style.display = 'none';
+    }
+  }
+
+  /**
    * Populate plan prices and wire up Apply Now buttons
    * @param {Object} resultsData - Full dpr_results_data from sessionStorage
    */
   function fillChart(resultsData) {
     resetChart();
+
+    // Get Province value to determine button visibility
+    const localData = getLocalStorageData();
+    const province = localData?.Province;
+    const isQuebec = province == 10; // Use == to handle string/number comparison
 
     // Extract PlanQuotes from results
     const quotes = resultsData?.results?.PlanQuotes || [];
@@ -1340,7 +1371,6 @@
       const btn = planItem.querySelector('[dpr-results-apply="button"]');
       if (btn) {
         btn.dataset.confirmation = quote.ConfirmationNumber;
-        btn.style.display = 'block';
 
         // Clone and replace to remove existing listeners
         const newBtn = btn.cloneNode(true);
@@ -1368,6 +1398,9 @@
           }
         });
       }
+
+      // Set button visibility based on Province
+      setPlanButtonVisibility(planItem, isQuebec);
     });
 
     console.log('Chart population complete');
