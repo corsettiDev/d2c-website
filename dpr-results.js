@@ -1373,7 +1373,8 @@
       // Populate price
       const priceEl = planItem.querySelector('[dpr-results-price="price"]');
       if (priceEl) {
-        priceEl.textContent = `$${quote.Premium}`;
+        const price = Math.round(parseFloat(quote.Premium));
+        priceEl.textContent = `$${price}`;
         priceEl.style.display = 'block';
       }
 
@@ -1494,10 +1495,11 @@
       newTotal += parseFloat(hospitalOption.OptionPremium);
     }
 
-    // Update price display (round to 2 decimals)
-    priceEl.textContent = `$${newTotal.toFixed(2)}`;
+    // Update price display (whole numbers only, no cents)
+    const displayPrice = Math.round(newTotal);
+    priceEl.textContent = `$${displayPrice}`;
 
-    console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${newTotal.toFixed(2)}`);
+    console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${displayPrice}`);
   }
 
   // ============================================================
