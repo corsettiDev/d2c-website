@@ -66,6 +66,16 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 - Wires up "Apply Now" buttons with application URLs
 - Supports future hospital accommodation options (stored but not displayed)
 
+#### Province-Based Button Display
+- **Quebec Province Handling (Province == 10):**
+  - Shows Quebec-specific call button (`[dpr-results-quebec="call"]`)
+  - Hides standard "Apply Now" button
+  - Call button is pre-configured in Webflow (no JavaScript handlers required)
+- **Other Provinces:**
+  - Shows standard "Apply Now" button with application URL functionality
+  - Hides Quebec call button
+- Button visibility updates automatically after successful API calls
+
 #### Plan Sorting & Filtering System
 - **Intelligent Plan Ranking:** Determines top 3 recommended plans based on:
   - `InsuranceReason` (0, 1, or 2)
@@ -118,7 +128,8 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 *Results Display:*
 - `[dpr-results-plan="PLAN NAME"]` - Plan container (e.g., "ZONE 2", "LINK 1")
 - `[dpr-results-price="price"]` - Price display element
-- `[dpr-results-apply="button"]` - Apply Now button
+- `[dpr-results-apply="button"]` - Apply Now button (shown for non-Quebec provinces)
+- `[dpr-results-quebec="call"]` - Quebec call button (shown only when Province == 10)
 - `[dpr-code-skeleton]` - Elements that should show skeleton loader during API calls
 - `[dpr-results="error-bar"]` - Error message container
 - `[data-results="dynamic-block"]` - Content blocks that hide when API fails (e.g., prices, buttons)
@@ -374,3 +385,4 @@ if (customInput) {
 - Quote results automatically refresh when filter fields change
 - Plan sorting and filtering works independently of API availability - filters apply even when API calls fail
 - Plan sorting algorithm handles all combinations of InsuranceReason, CoverageTier, and PreExisting conditions with granular ordering for distinct user scenarios
+- Quebec province (Province == 10) displays a call button instead of the standard "Apply Now" button due to provincial regulations
