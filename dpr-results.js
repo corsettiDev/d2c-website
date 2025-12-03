@@ -1395,9 +1395,10 @@
         // Populate text line
         const textLine = checkboxWrapper.querySelector('[dpr-quote-hospital="text-line"]');
         if (textLine) {
-          const price = parseFloat(hospitalOption.OptionPremium);
-          const priceDisplay = price % 1 === 0 ? price.toFixed(0) : price.toFixed(2);
-          textLine.textContent = `${hospitalAccommodationText}$${priceDisplay}`;
+          // Display as whole number only (no cents)
+          // Note: If cents are needed in future, use: price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)
+          const price = Math.round(parseFloat(hospitalOption.OptionPremium));
+          textLine.textContent = `${hospitalAccommodationText}$${price}`;
         }
 
         // Wire up checkbox handler
