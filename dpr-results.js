@@ -21,6 +21,9 @@
   // Root API URL
   const rootApiURL = document.currentScript.getAttribute("data-api-url") || "https://qagsd2cins.greenshield.ca";
 
+  // Hospital accommodation text prefix
+  const hospitalAccommodationText = "Add optional hospital accommodation for ";
+
   // ============================================================
   // STORAGE HELPER FUNCTIONS
   // ============================================================
@@ -1226,6 +1229,17 @@
       if (quebecBtn) {
         quebecBtn.style.display = 'none';
       }
+
+      // Hide/reset hospital checkbox
+      const checkboxWrapper = planItem.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+      if (checkboxWrapper) {
+        checkboxWrapper.style.display = 'none';
+
+        const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
+        if (checkbox) {
+          checkbox.checked = false;
+        }
+      }
     });
 
     console.log(`Reset ${planItems.length} plan items`);
@@ -1363,15 +1377,47 @@
         priceEl.style.display = 'block';
       }
 
-      // Check for hospital accommodation option (prepare for future use)
+      // Check for hospital accommodation option
       const hospitalOption = quote.QuoteOptions?.find(
         option => option.OptionName === 'Hospital Accommodation'
       );
 
-      if (hospitalOption) {
-        console.log(`Hospital accommodation available for ${quote.PlanName}: $${hospitalOption.OptionPremium}`);
-        // Store for future use but don't display yet (no frontend)
+      const checkboxWrapper = planItem.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+
+      if (hospitalOption && checkboxWrapper) {
+        // Store hospital option data and base premium for calculations
         planItem.dataset.hospitalOption = JSON.stringify(hospitalOption);
+        planItem.dataset.basePremium = quote.Premium; // Store original price
+
+        // Show checkbox UI
+        checkboxWrapper.style.display = 'block';
+
+        // Populate text line
+        const textLine = checkboxWrapper.querySelector('[dpr-quote-hospital="text-line"]');
+        if (textLine) {
+          textLine.textContent = `${hospitalAccommodationText}$${hospitalOption.OptionPremium}`;
+        }
+
+        // Wire up checkbox handler
+        const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
+        if (checkbox) {
+          // Reset checkbox state (no persistence)
+          checkbox.checked = false;
+
+          // Remove existing listeners (if any)
+          const newCheckbox = checkbox.cloneNode(true);
+          checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+
+          // Add change listener
+          newCheckbox.addEventListener('change', (e) => {
+            handleHospitalCheckboxChange(planItem, hospitalOption, e.target.checked);
+          });
+        }
+
+        console.log(`Hospital accommodation available for ${quote.PlanName}: $${hospitalOption.OptionPremium}`);
+      } else if (checkboxWrapper) {
+        // Hide checkbox UI if hospital option not available
+        checkboxWrapper.style.display = 'none';
       }
 
       // Wire up Apply Now button
@@ -1414,6 +1460,41 @@
 
     // Apply sorting and filtering after chart population
     applyPlanVisibilityAndOrder();
+  }
+
+  /**
+   * Handle hospital accommodation checkbox change
+   * Updates the displayed price when checkbox is toggled
+   * @param {HTMLElement} planItem - The plan card container
+   * @param {Object} hospitalOption - The hospital option data
+   * @param {boolean} isChecked - Whether checkbox is checked
+   */
+  function handleHospitalCheckboxChange(planItem, hospitalOption, isChecked) {
+    const priceEl = planItem.querySelector('[dpr-results-price="price"]');
+
+    if (!priceEl) {
+      console.warn('Price element not found for hospital checkbox change');
+      return;
+    }
+
+    // Get base premium from dataset
+    const basePremium = parseFloat(planItem.dataset.basePremium);
+
+    if (isNaN(basePremium)) {
+      console.warn('Invalid base premium stored in dataset');
+      return;
+    }
+
+    // Calculate new total
+    let newTotal = basePremium;
+    if (isChecked) {
+      newTotal += parseFloat(hospitalOption.OptionPremium);
+    }
+
+    // Update price display (round to 2 decimals)
+    priceEl.textContent = `$${newTotal.toFixed(2)}`;
+
+    console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${newTotal.toFixed(2)}`);
   }
 
   // ============================================================
