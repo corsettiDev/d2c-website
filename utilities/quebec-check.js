@@ -9,11 +9,28 @@
    *    ✓ Verifies if Province field equals "10" (Quebec)
    *    ✓ Safe error handling for localStorage access
    *    ✓ Exports global function: window.isQuebec()
+   *    ✓ Dispatches 'quebec-ready' event when initialized
    *
-   *  USAGE:
+   *  USAGE (Synchronous):
    *    if (window.isQuebec && window.isQuebec()) {
    *      // Show Quebec-specific content
    *    }
+   *
+   *  USAGE (Event-based - recommended for reliable timing):
+   *    // Hybrid pattern handles race conditions
+   *    if (window.isQuebec) {
+   *      // Already loaded - use immediately
+   *      applyLogic(window.isQuebec());
+   *    } else {
+   *      // Wait for ready event
+   *      window.addEventListener('quebec-ready', function(event) {
+   *        applyLogic(event.detail.isQuebec);
+   *      }, { once: true });
+   *    }
+   *
+   *  EVENTS:
+   *    - 'quebec-ready': Dispatched when utility is initialized
+   *      - event.detail.isQuebec: boolean result
    *
    *  RETURNS:
    *    - true: User is in Quebec (Province == 10)
@@ -58,5 +75,13 @@
 
   // Export to global scope for use in page scripts
   window.isQuebec = isQuebec;
+
+  // Dispatch event to notify listeners that quebec check is ready
+  // Use setTimeout to ensure function is available before event fires
+  setTimeout(function() {
+    window.dispatchEvent(new CustomEvent('quebec-ready', {
+      detail: { isQuebec: isQuebec() }
+    }));
+  }, 0);
 
 })();
