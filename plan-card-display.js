@@ -435,8 +435,8 @@
     const filterState = getCurrentFilterState();
     const filteredPlanNames = getFilteredPlans(filterState);
 
-    // Step 2: Get all plan elements
-    const allPlanElements = document.querySelectorAll('[dpr-results-plan]');
+    // Step 2: Get all plan elements (exclude injected plans from plan-injector.js)
+    const allPlanElements = document.querySelectorAll('[dpr-results-plan]:not([data-injected-plan])');
 
     if (allPlanElements.length === 0) {
       console.warn('No plan elements found on page');
@@ -1224,6 +1224,11 @@
     });
 
     console.log('Chart population complete');
+
+    // Dispatch event to notify plan-injector
+    window.dispatchEvent(new CustomEvent('plans-populated', {
+      detail: { planCount: quotes.length }
+    }));
   }
 
   // ============================================================
