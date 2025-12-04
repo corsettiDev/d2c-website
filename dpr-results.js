@@ -150,10 +150,10 @@
       }
     }
 
-    // Conditional: Dependents required unless CoverageType is 0
-    if (localData.CoverageType != 0) {
+    // Conditional: Dependents required unless CoverageType is 0 or 3
+    if (localData.CoverageType != 0 && localData.CoverageType != 3) {
       if (isFieldMissing(localData.Dependents)) {
-        console.warn('Required field missing: Dependents (CoverageType is not 0)');
+        console.warn('Required field missing: Dependents (CoverageType is not 0 or 3)');
         return false;
       }
     }

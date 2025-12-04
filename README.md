@@ -147,7 +147,7 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 - LINK 1, LINK 2, LINK 3, LINK 4
 
 **Conditional Field Requirements:**
-- `Dependents` - Required unless `CoverageType == 0`
+- `Dependents` - Required unless `CoverageType == 0` or `CoverageType == 3`
 - `PreExisting` - Not required if `InsuranceReason == 2`
 - `PreExistingCoverage` - Not required if `InsuranceReason == 2` OR `PreExisting == 'no'`
 
