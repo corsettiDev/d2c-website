@@ -9,8 +9,15 @@
   // Root API URL
   const rootApiURL = document.currentScript.getAttribute("data-api-url") || "https://qagsd2cins.greenshield.ca";
 
+  // Filter style mode - controls whether filtering hides or just reorders plans
+  const filterStyle = document.currentScript.getAttribute("data-filter-style") || "showAll";
+
   // Hospital accommodation text prefix
   const hospitalAccommodationText = "Add optional hospital accommodation for ";
+
+  // Comparison feature state
+  let selectedPlans = [];
+  let isCompareActive = false;
 
   // Filter sets for plan visibility and ordering
   const INSURANCE_REASON_SETS = {
@@ -270,7 +277,10 @@
       return;
     }
 
-    // Step 2: Build payload and call API
+    // Step 2: Show skeleton loaders
+    showSkeletonLoaders();
+
+    // Step 3: Build payload and call API
     try {
       const localData = getLocalStorageData();
       const payload = buildPayload();
@@ -296,6 +306,9 @@
     } catch (error) {
       console.error('Page load API call error:', error);
       hideDynamicBlocks();
+    } finally {
+      // Step 4: Always hide skeleton loaders
+      hideSkeletonLoaders();
     }
   }
 
@@ -342,6 +355,78 @@
   }
 
   /**
+   * Reset filters to 'all' state
+   * Used when activating comparison mode
+   */
+  function resetFiltersToAll() {
+    // Remove filter fields from localStorage
+    removeLocalStorageField('InsuranceReason');
+    removeLocalStorageField('CoverageTier');
+
+    // Update all filter form fields to 'all'
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+      if (form.elements['InsuranceReason']) {
+        setFieldValue(form, 'InsuranceReason', 'all');
+      }
+      if (form.elements['CoverageTier']) {
+        setFieldValue(form, 'CoverageTier', 'all');
+      }
+    });
+
+    console.log('Filters reset to all');
+  }
+
+  /**
+   * Disable filter controls
+   * Used during active comparison
+   */
+  function disableFilterControls() {
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+      ['InsuranceReason', 'CoverageTier'].forEach(fieldName => {
+        const elements = form.elements[fieldName];
+
+        if (!elements) return;
+
+        if (elements instanceof RadioNodeList) {
+          for (const radio of elements) {
+            radio.disabled = true;
+          }
+        } else {
+          elements.disabled = true;
+        }
+      });
+    });
+  }
+
+  /**
+   * Enable filter controls
+   * Used when comparison is cleared
+   */
+  function enableFilterControls() {
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+      ['InsuranceReason', 'CoverageTier'].forEach(fieldName => {
+        const elements = form.elements[fieldName];
+
+        if (!elements) return;
+
+        if (elements instanceof RadioNodeList) {
+          for (const radio of elements) {
+            radio.disabled = false;
+          }
+        } else {
+          elements.disabled = false;
+        }
+      });
+    });
+  }
+
+  /**
    * Apply plan visibility and ordering based on current filter state
    * All plans stay visible - filtered plans are just reordered to appear first
    */
@@ -358,9 +443,10 @@
       return;
     }
 
-    // If no filtering (both 'all'), keep existing DOM order
+    // If no filtering (both 'all'), show all plans and keep existing DOM order
     if (!filteredPlanNames) {
-      console.log('No filtering applied - keeping existing order');
+      console.log('No filtering applied - showing all plans in existing order');
+      allPlanElements.forEach(el => el.style.display = '');
       return;
     }
 
@@ -391,10 +477,209 @@
     filteredElements.forEach(el => planParent.appendChild(el));
     otherElements.forEach(el => planParent.appendChild(el));
 
-    // Step 6: All plans stay visible
-    allPlanElements.forEach(el => el.style.display = '');
+    // Step 6: Apply visibility based on filter style
+    if (filterStyle === 'limit') {
+      // Limit mode: Show only filtered plans, hide others
+      filteredElements.forEach(el => el.style.display = '');
+      otherElements.forEach(el => el.style.display = 'none');
+      console.log(`Applied filtering (limit mode): ${filteredElements.length} shown, ${otherElements.length} hidden`);
+    } else {
+      // ShowAll mode (default): All plans visible, just reordered
+      allPlanElements.forEach(el => el.style.display = '');
+      console.log(`Applied filtering (showAll mode): ${filteredElements.length} filtered, ${otherElements.length} others`);
+    }
+  }
 
-    console.log(`Applied filtering: ${filteredElements.length} filtered, ${otherElements.length} others`);
+  // ============================================================
+  // PLAN COMPARISON FUNCTIONALITY
+  // ============================================================
+
+  /**
+   * Add a plan to the comparison slots
+   * @param {string} planName - The plan name to add
+   */
+  function addPlanToCompare(planName) {
+    if (selectedPlans.length >= 3 || selectedPlans.includes(planName)) {
+      return;
+    }
+
+    const compareSlots = document.querySelectorAll('[data-compare="outer-wrapper"]');
+
+    // Find first available slot
+    for (let i = 0; i < compareSlots.length; i++) {
+      const slot = compareSlots[i];
+      const wrapper = slot.querySelector('[data-compare="plan-wrapper"]');
+
+      if (!wrapper.classList.contains('active')) {
+        const nameElement = wrapper.querySelector('[data-compare="plan-name"]');
+        nameElement.textContent = planName;
+        wrapper.classList.add('active');
+        selectedPlans.push(planName);
+        break;
+      }
+    }
+  }
+
+  /**
+   * Remove a plan from comparison and reorganize remaining plans
+   * @param {string} planName - The plan name to remove
+   */
+  function removePlanFromCompare(planName) {
+    const index = selectedPlans.indexOf(planName);
+    if (index > -1) {
+      selectedPlans.splice(index, 1);
+    }
+
+    const compareSlots = document.querySelectorAll('[data-compare="outer-wrapper"]');
+
+    // Clear all slots
+    compareSlots.forEach(slot => {
+      const wrapper = slot.querySelector('[data-compare="plan-wrapper"]');
+      const nameElement = wrapper.querySelector('[data-compare="plan-name"]');
+      nameElement.textContent = '';
+      wrapper.classList.remove('active');
+    });
+
+    // Re-add remaining plans in order
+    selectedPlans.forEach((name, idx) => {
+      const slot = compareSlots[idx];
+      const wrapper = slot.querySelector('[data-compare="plan-wrapper"]');
+      const nameElement = wrapper.querySelector('[data-compare="plan-name"]');
+      nameElement.textContent = name;
+      wrapper.classList.add('active');
+    });
+  }
+
+  /**
+   * Update checkbox states based on selection limit
+   */
+  function updateCheckboxState() {
+    const checkboxes = document.querySelectorAll('[data-compare-trigger]');
+
+    checkboxes.forEach(checkbox => {
+      checkbox.disabled = selectedPlans.length >= 3 && !checkbox.checked;
+    });
+  }
+
+  /**
+   * Update compare button state and appearance
+   */
+  function updateCompareButtonState() {
+    const compareButton = document.querySelector('[data-compare="compare-button"]');
+    const compareComponent = document.querySelector('[data-compare="component"]');
+
+    if (!compareButton) return;
+
+    if (selectedPlans.length > 0) {
+      compareButton.classList.remove('disabled');
+      // Show the compare component when plans are selected
+      if (compareComponent) {
+        compareComponent.classList.remove('hide');
+      }
+    } else {
+      compareButton.classList.add('disabled');
+      // Hide the compare component when no plans are selected
+      if (compareComponent) {
+        compareComponent.classList.add('hide');
+      }
+      if (isCompareActive) {
+        clearComparison();
+      }
+    }
+  }
+
+  /**
+   * Activate comparison mode - hide non-selected plans
+   */
+  function activateComparison() {
+    if (selectedPlans.length === 0) return;
+
+    // Reset filters to 'all' before comparison
+    resetFiltersToAll();
+
+    // Hide non-selected plan columns (using dpr-results-plan attribute)
+    const allPlanColumns = document.querySelectorAll('[dpr-results-plan]');
+    allPlanColumns.forEach(column => {
+      const planName = column.getAttribute('dpr-results-plan');
+      if (!selectedPlans.includes(planName)) {
+        column.classList.add('hide');
+      } else {
+        column.style.display = '';
+      }
+    });
+
+    // Update compare button text
+    const compareButton = document.querySelector('[data-compare="compare-button"]');
+    if (compareButton) {
+      const buttonText = compareButton.querySelector('div');
+      if (buttonText) buttonText.textContent = 'Clear';
+    }
+
+    // Disable controls during comparison
+    const checkboxes = document.querySelectorAll('[data-compare-trigger]');
+    checkboxes.forEach(checkbox => checkbox.disabled = true);
+
+    document.querySelectorAll('[data-compare="plan-remove"]').forEach(btn => {
+      btn.style.display = 'none';
+    });
+
+    // Disable filter controls
+    disableFilterControls();
+
+    isCompareActive = true;
+    console.log('Comparison mode activated');
+  }
+
+  /**
+   * Clear comparison mode and restore normal view
+   */
+  function clearComparison() {
+    // Show all columns (using dpr-results-plan attribute)
+    const allPlanColumns = document.querySelectorAll('[dpr-results-plan]');
+    allPlanColumns.forEach(column => {
+      column.classList.remove('hide');
+    });
+
+    // Reset checkboxes
+    const checkboxes = document.querySelectorAll('[data-compare-trigger]');
+    checkboxes.forEach(checkbox => {
+      checkbox.checked = false;
+      checkbox.disabled = false;
+    });
+
+    // Clear comparison slots
+    const compareSlots = document.querySelectorAll('[data-compare="outer-wrapper"]');
+    compareSlots.forEach(slot => {
+      const wrapper = slot.querySelector('[data-compare="plan-wrapper"]');
+      const nameElement = wrapper.querySelector('[data-compare="plan-name"]');
+      nameElement.textContent = '';
+      wrapper.classList.remove('active');
+    });
+
+    // Update compare button
+    const compareButton = document.querySelector('[data-compare="compare-button"]');
+    if (compareButton) {
+      const buttonText = compareButton.querySelector('div');
+      if (buttonText) buttonText.textContent = 'Compare Plans';
+    }
+
+    // Show remove buttons
+    document.querySelectorAll('[data-compare="plan-remove"]').forEach(btn => {
+      btn.style.display = '';
+    });
+
+    // Re-enable filter controls
+    enableFilterControls();
+
+    // Reset state
+    selectedPlans = [];
+    isCompareActive = false;
+    updateCompareButtonState();
+
+    // Re-apply current filters
+    applyPlanVisibilityAndOrder();
+
+    console.log('Comparison mode cleared');
   }
 
   // ============================================================
@@ -619,6 +904,42 @@
     });
 
     console.log(`Shown ${dynamicBlocks.length} dynamic blocks`);
+  }
+
+  // ============================================================
+  // SKELETON LOADER FUNCTIONALITY
+  // ============================================================
+
+  /**
+   * Create and display skeleton loaders on all marked elements
+   */
+  function showSkeletonLoaders() {
+    const skeletonElements = document.querySelectorAll('[dpr-code-skeleton]');
+
+    skeletonElements.forEach(element => {
+      // Skip if skeleton already exists
+      if (element.querySelector('.skeleton-loader')) return;
+
+      const skeletonDiv = document.createElement('div');
+      skeletonDiv.classList.add('skeleton-loader');
+      element.style.position = 'relative';
+      element.appendChild(skeletonDiv);
+    });
+
+    console.log(`Skeleton loaders shown on ${skeletonElements.length} elements`);
+  }
+
+  /**
+   * Remove all skeleton loaders from the page
+   */
+  function hideSkeletonLoaders() {
+    const skeletonLoaders = document.querySelectorAll('.skeleton-loader');
+
+    skeletonLoaders.forEach(loader => {
+      loader.remove();
+    });
+
+    console.log(`Removed ${skeletonLoaders.length} skeleton loaders`);
   }
 
   // ============================================================
@@ -910,6 +1231,75 @@
   // ============================================================
 
   /**
+   * Initialize plan comparison feature
+   * Only runs if comparison UI elements are present on page
+   */
+  function initializeComparisonFeature() {
+    // Check if comparison UI exists
+    const compareButton = document.querySelector('[data-compare="compare-button"]');
+
+    if (!compareButton) {
+      console.log('Plan Card Display: Comparison feature not initialized (no UI elements found)');
+      return;
+    }
+
+    console.log('Plan Card Display: Initializing comparison feature...');
+
+    const checkboxes = document.querySelectorAll('[data-compare-trigger]');
+
+    // Initialize comparison state
+    updateCompareButtonState();
+
+    // Handle plan selection/deselection
+    checkboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', function() {
+        const planName = this.getAttribute('data-compare-trigger');
+
+        if (this.checked) {
+          addPlanToCompare(planName);
+        } else {
+          removePlanFromCompare(planName);
+        }
+
+        updateCheckboxState();
+        updateCompareButtonState();
+      });
+    });
+
+    // Handle compare button clicks
+    compareButton.addEventListener('click', function() {
+      if (isCompareActive) {
+        clearComparison();
+      } else {
+        activateComparison();
+      }
+    });
+
+    // Handle remove button clicks in comparison slots
+    document.addEventListener('click', function(event) {
+      if (event.target.closest('[data-compare="plan-remove"]')) {
+        if (isCompareActive) return; // Don't allow removal during active comparison
+
+        const wrapper = event.target.closest('[data-compare="plan-wrapper"]');
+        const planName = wrapper.querySelector('[data-compare="plan-name"]').textContent;
+
+        // Uncheck corresponding checkbox
+        checkboxes.forEach(checkbox => {
+          if (checkbox.getAttribute('data-compare-trigger') === planName) {
+            checkbox.checked = false;
+          }
+        });
+
+        removePlanFromCompare(planName);
+        updateCheckboxState();
+        updateCompareButtonState();
+      }
+    });
+
+    console.log('Plan Card Display: Comparison feature initialized');
+  }
+
+  /**
    * Main initialization function
    */
   function initialize() {
@@ -920,6 +1310,9 @@
 
     // Setup form change listeners
     setupFormChangeListeners();
+
+    // Initialize comparison feature (if UI exists)
+    initializeComparisonFeature();
 
     // Trigger API call on page load
     handlePageLoadApiCall();
