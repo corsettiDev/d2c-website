@@ -274,42 +274,47 @@
     if (!validateApiFields()) {
       console.warn('Missing API-required fields - hiding dynamic blocks');
       hideDynamicBlocks();
-      return;
+      // Don't return yet - need to dispatch event below
+    } else {
+      // Step 2: Show skeleton loaders
+      showSkeletonLoaders();
+
+      // Step 3: Build payload and call API
+      try {
+        const localData = getLocalStorageData();
+        const payload = buildPayload();
+
+        if (!payload) {
+          console.error('Failed to build API payload');
+          hideDynamicBlocks();
+        } else {
+          console.log('Fetching quotes with payload:', payload);
+          const apiResponse = await fetchQuotes(payload);
+
+          if (apiResponse) {
+            console.log('Page load API call succeeded');
+            showDynamicBlocks();
+            fillChart({ results: apiResponse, dpr_local_storage: localData });
+            applyPlanVisibilityAndOrder();
+          } else {
+            console.error('Page load API call failed');
+            hideDynamicBlocks();
+          }
+        }
+      } catch (error) {
+        console.error('Page load API call error:', error);
+        hideDynamicBlocks();
+      } finally {
+        // Step 4: Always hide skeleton loaders
+        hideSkeletonLoaders();
+      }
     }
 
-    // Step 2: Show skeleton loaders
-    showSkeletonLoaders();
-
-    // Step 3: Build payload and call API
-    try {
-      const localData = getLocalStorageData();
-      const payload = buildPayload();
-
-      if (!payload) {
-        console.error('Failed to build API payload');
-        hideDynamicBlocks();
-        return;
-      }
-
-      console.log('Fetching quotes with payload:', payload);
-      const apiResponse = await fetchQuotes(payload);
-
-      if (apiResponse) {
-        console.log('Page load API call succeeded');
-        showDynamicBlocks();
-        fillChart({ results: apiResponse, dpr_local_storage: localData });
-        applyPlanVisibilityAndOrder();
-      } else {
-        console.error('Page load API call failed');
-        hideDynamicBlocks();
-      }
-    } catch (error) {
-      console.error('Page load API call error:', error);
-      hideDynamicBlocks();
-    } finally {
-      // Step 4: Always hide skeleton loaders
-      hideSkeletonLoaders();
-    }
+    // Step 5: Always dispatch event to notify plan-injector
+    // This runs whether API succeeded, failed, or validation failed
+    window.dispatchEvent(new CustomEvent('plans-populated', {
+      detail: { success: true }
+    }));
   }
 
   // ============================================================
@@ -1224,11 +1229,6 @@
     });
 
     console.log('Chart population complete');
-
-    // Dispatch event to notify plan-injector
-    window.dispatchEvent(new CustomEvent('plans-populated', {
-      detail: { planCount: quotes.length }
-    }));
   }
 
   // ============================================================
