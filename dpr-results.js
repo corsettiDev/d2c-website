@@ -22,6 +22,7 @@
   const rootApiURL = document.currentScript.getAttribute("data-api-url") || "https://qagsd2cins.greenshield.ca";
 
   // Hospital accommodation text prefix
+  // setup global variable for attribute usage
   const hospitalAccommodationText = "Add optional hospital accommodation for ";
 
   // ============================================================
