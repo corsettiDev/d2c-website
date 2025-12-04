@@ -1,0 +1,934 @@
+(function() {
+  // ============================================================
+  // GLOBAL STATE
+  // ============================================================
+
+  // Flag to prevent infinite loop when syncing fields
+  let isSyncing = false;
+
+  // Root API URL
+  const rootApiURL = document.currentScript.getAttribute("data-api-url") || "https://qagsd2cins.greenshield.ca";
+
+  // Hospital accommodation text prefix
+  const hospitalAccommodationText = "Add optional hospital accommodation for ";
+
+  // Filter sets for plan visibility and ordering
+  const INSURANCE_REASON_SETS = {
+    '1': ['LINK 1', 'LINK 2', 'LINK 3', 'LINK 4', 'ZONE FUNDAMENTAL PLAN', 'ZONE 4', 'ZONE 5'],
+    '2': ['LINK 4', 'ZONE 2', 'ZONE 3', 'ZONE FUNDAMENTAL PLAN'],
+    '0': ['LINK 2', 'LINK 3', 'LINK 4', 'ZONE FUNDAMENTAL PLAN', 'ZONE 5', 'ZONE 6', 'ZONE 7']
+  };
+
+  const COVERAGE_TIER_SETS = {
+    'basic': ['LINK 1', 'LINK 2', 'LINK 3', 'ZONE 2', 'ZONE 3', 'ZONE FUNDAMENTAL PLAN', 'ZONE 4', 'ZONE 5'],
+    'comprehensive': ['LINK 1', 'LINK 2', 'LINK 3', 'LINK 4', 'ZONE 2', 'ZONE 3', 'ZONE 4', 'ZONE 5', 'ZONE 6', 'ZONE 7']
+  };
+
+  // ============================================================
+  // STORAGE HELPER FUNCTIONS
+  // ============================================================
+
+  /**
+   * Retrieve non-personal quote data from localStorage
+   * @returns {Object|null} Parsed localStorage data or null if unavailable
+   */
+  function getLocalStorageData() {
+    try {
+      const raw = localStorage.getItem('dpr_local_data');
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('Failed to read from localStorage:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Retrieve marketing attribution data from localStorage
+   * @returns {Object} Attribution data or empty object if unavailable
+   */
+  function getAttributionData() {
+    try {
+      const raw = localStorage.getItem('visitor_attribution');
+      if (!raw) return {};
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('Failed to read attribution data:', e);
+      return {};
+    }
+  }
+
+  // ============================================================
+  // STORAGE UPDATE FUNCTIONS
+  // ============================================================
+
+  /**
+   * Update a single field in localStorage (dpr_local_data)
+   * @param {string} fieldName - The field name to update
+   * @param {*} value - The new value for the field
+   * @returns {boolean} True if update succeeded, false otherwise
+   */
+  function updateLocalStorage(fieldName, value) {
+    try {
+      const data = getLocalStorageData() || {};
+      data[fieldName] = value;
+      localStorage.setItem('dpr_local_data', JSON.stringify(data));
+      return true;
+    } catch (e) {
+      console.warn('Failed to update localStorage:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Remove a single field from localStorage (dpr_local_data)
+   * Used when filter value is set to 'all' to prevent interference with dpr-results.js
+   * @param {string} fieldName - The field name to remove
+   * @returns {boolean} True if removal succeeded, false otherwise
+   */
+  function removeLocalStorageField(fieldName) {
+    try {
+      const data = getLocalStorageData() || {};
+      delete data[fieldName];
+      localStorage.setItem('dpr_local_data', JSON.stringify(data));
+      return true;
+    } catch (e) {
+      console.warn('Failed to remove field from localStorage:', e);
+      return false;
+    }
+  }
+
+  // ============================================================
+  // FIELD VALIDATION
+  // ============================================================
+
+  /**
+   * Check if a field value is missing (null, undefined, or empty string)
+   * @param {*} value - The value to check
+   * @returns {boolean} True if value is missing, false otherwise
+   */
+  function isFieldMissing(value) {
+    return value == null || value === '';
+  }
+
+  /**
+   * Validate that API-required fields exist in localStorage
+   * Simplified validation - only checks fields needed for API call
+   * @returns {boolean} True if all required fields exist, false otherwise
+   */
+  function validateApiFields() {
+    const localData = getLocalStorageData();
+
+    if (!localData) {
+      console.warn('No localStorage data found');
+      return false;
+    }
+
+    // Always required fields
+    if (isFieldMissing(localData.CoverageType)) {
+      console.warn('Required field missing: CoverageType');
+      return false;
+    }
+    if (isFieldMissing(localData.Age)) {
+      console.warn('Required field missing: Age');
+      return false;
+    }
+    if (isFieldMissing(localData.Province)) {
+      console.warn('Required field missing: Province');
+      return false;
+    }
+
+    // Conditionally required: Dependents (not needed if CoverageType == 0)
+    if (localData.CoverageType != 0) {
+      if (isFieldMissing(localData.Dependents)) {
+        console.warn('Required field missing: Dependents (CoverageType is not 0)');
+        return false;
+      }
+    }
+
+    console.log('All API-required fields validated successfully');
+    return true;
+  }
+
+  // ============================================================
+  // PAYLOAD BUILDING
+  // ============================================================
+
+  /**
+   * Build API payload from stored data
+   * Merges data from localStorage and attribution tracker
+   * Personal fields (sessionStorage) are set to null
+   * @returns {Object|null} Complete API payload or null if required data is missing
+   */
+  function buildPayload() {
+    // Retrieve data from storage sources
+    const localData = getLocalStorageData();
+    const attributionData = getAttributionData();
+
+    // Validate required data exists
+    if (!localData) {
+      console.error('Missing required quote data in localStorage');
+      return null;
+    }
+
+    // Build the payload with proper type conversions
+    const payload = {
+      // Core quote fields (MUST convert strings to numbers)
+      CoverageType: Number(localData.CoverageType),
+      Province: Number(localData.Province),
+      Age: Number(localData.Age),
+      Dependents: Number(localData.Dependents || 0),
+      CoverageTier: Number(localData.CoverageTier),
+      InsuranceReason: localData.InsuranceReason ? Number(localData.InsuranceReason) : null,
+
+      // Coverage options
+      PreExisting: localData.PreExisting || null,
+      PreExistingCoverage: localData.PreExistingCoverage ? Number(localData.PreExistingCoverage) : null,
+
+      // Contact information (all null for this utility - no sessionStorage)
+      EmailAddress: null,
+      PhoneNumber: null,
+      MarketingPermission: false,
+
+      // Personal information (all null for this utility - no sessionStorage)
+      FirstName: null,
+      LastName: null,
+
+      // Attribution tracking data (merge all attribution fields)
+      gclid: attributionData.gclid || null,
+      fbclid: attributionData.fbclid || null,
+      utm_source: attributionData.utm_source || null,
+      utm_medium: attributionData.utm_medium || null,
+      utm_campaign: attributionData.utm_campaign || null,
+      utm_term: attributionData.utm_term || null,
+      utm_content: attributionData.utm_content || null,
+      referrer: attributionData.referrer || null,
+      ga_client_id: attributionData.ga_client_id || null,
+      landing_page: attributionData.landing_page || null,
+      user_agent: attributionData.user_agent || null,
+      language: attributionData.language || null,
+
+      // Legacy fields - Kept for API compatibility
+      LeftGroupHealthPlan: null,
+      Prescription: null,
+      CoverOption: null,
+      PhoneExtension: null
+    };
+
+    return payload;
+  }
+
+  // ============================================================
+  // API FUNCTIONS
+  // ============================================================
+
+  /**
+   * Call the GreenShield quote API
+   * @param {Object} payload - Complete API payload from buildPayload()
+   * @returns {Promise<Object>} Full API response with QuoteSetId and PlanQuotes
+   * @throws {Error} If API request fails or returns non-OK status
+   */
+  async function fetchQuotes(payload) {
+    try {
+      const res = await fetch(`${rootApiURL}/quoteset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`Quote API failed with status: ${res.status}`);
+      }
+
+      const json = await res.json();
+
+      // Validate response structure
+      if (!json.QuoteSetId || !json.PlanQuotes) {
+        console.warn('API response missing expected fields:', json);
+      }
+
+      return json;
+    } catch (error) {
+      console.error('Fetch error:', error);
+      throw error; // Re-throw to allow caller to handle
+    }
+  }
+
+  /**
+   * Handle API call on page load
+   * Simplified version - no redirect on missing fields, just hide blocks
+   */
+  async function handlePageLoadApiCall() {
+    console.log('Plan Card Display: Starting page load API call...');
+
+    // Step 1: Validate required fields
+    if (!validateApiFields()) {
+      console.warn('Missing API-required fields - hiding dynamic blocks');
+      hideDynamicBlocks();
+      return;
+    }
+
+    // Step 2: Build payload and call API
+    try {
+      const localData = getLocalStorageData();
+      const payload = buildPayload();
+
+      if (!payload) {
+        console.error('Failed to build API payload');
+        hideDynamicBlocks();
+        return;
+      }
+
+      console.log('Fetching quotes with payload:', payload);
+      const apiResponse = await fetchQuotes(payload);
+
+      if (apiResponse) {
+        console.log('Page load API call succeeded');
+        showDynamicBlocks();
+        fillChart({ results: apiResponse, dpr_local_storage: localData });
+        applyPlanVisibilityAndOrder();
+      } else {
+        console.error('Page load API call failed');
+        hideDynamicBlocks();
+      }
+    } catch (error) {
+      console.error('Page load API call error:', error);
+      hideDynamicBlocks();
+    }
+  }
+
+  // ============================================================
+  // PLAN FILTERING LOGIC
+  // ============================================================
+
+  /**
+   * Get current filter state from localStorage
+   * @returns {Object} Current filter values (defaults to 'all' if missing)
+   */
+  function getCurrentFilterState() {
+    const localData = getLocalStorageData() || {};
+
+    return {
+      InsuranceReason: localData.InsuranceReason || 'all',
+      CoverageTier: localData.CoverageTier || 'all'
+    };
+  }
+
+  /**
+   * Get list of plan names that match current filter criteria
+   * @param {Object} filterState - Current filter values
+   * @returns {string[]|null} Array of matching plan names, or null if no filtering
+   */
+  function getFilteredPlans(filterState) {
+    const { InsuranceReason, CoverageTier } = filterState;
+
+    // Get plan sets for each filter
+    const insuranceSet = INSURANCE_REASON_SETS[InsuranceReason];
+    const tierSet = COVERAGE_TIER_SETS[CoverageTier];
+
+    // If both are 'all' or missing → return null (no filtering)
+    if (!insuranceSet && !tierSet) {
+      return null;
+    }
+
+    // If one is 'all' → return the other set
+    if (!insuranceSet) return tierSet;
+    if (!tierSet) return insuranceSet;
+
+    // Both filters set → return intersection
+    return insuranceSet.filter(plan => tierSet.includes(plan));
+  }
+
+  /**
+   * Apply plan visibility and ordering based on current filter state
+   * All plans stay visible - filtered plans are just reordered to appear first
+   */
+  function applyPlanVisibilityAndOrder() {
+    // Step 1: Get current filter state
+    const filterState = getCurrentFilterState();
+    const filteredPlanNames = getFilteredPlans(filterState);
+
+    // Step 2: Get all plan elements
+    const allPlanElements = document.querySelectorAll('[dpr-results-plan]');
+
+    if (allPlanElements.length === 0) {
+      console.warn('No plan elements found on page');
+      return;
+    }
+
+    // If no filtering (both 'all'), keep existing DOM order
+    if (!filteredPlanNames) {
+      console.log('No filtering applied - keeping existing order');
+      return;
+    }
+
+    // Step 3: Get parent container
+    const planArray = Array.from(allPlanElements);
+    const planParent = planArray[0]?.parentElement;
+
+    if (!planParent) {
+      console.warn('Could not find plan parent container');
+      return;
+    }
+
+    // Step 4: Separate filtered from non-filtered plans
+    const filteredElements = [];
+    const otherElements = [];
+
+    planArray.forEach(planEl => {
+      const planName = planEl.getAttribute('dpr-results-plan');
+      if (filteredPlanNames.includes(planName)) {
+        filteredElements.push(planEl);
+      } else {
+        otherElements.push(planEl);
+      }
+    });
+
+    // Step 5: Reorder DOM - filtered plans first (in existing DOM order), then others
+    planArray.forEach(el => el.remove());
+    filteredElements.forEach(el => planParent.appendChild(el));
+    otherElements.forEach(el => planParent.appendChild(el));
+
+    // Step 6: All plans stay visible
+    allPlanElements.forEach(el => el.style.display = '');
+
+    console.log(`Applied filtering: ${filteredElements.length} filtered, ${otherElements.length} others`);
+  }
+
+  // ============================================================
+  // FORM FIELD VALUE MANAGEMENT
+  // ============================================================
+
+  /**
+   * Get current value from a form field
+   * @param {HTMLFormElement} formEl - The form element
+   * @param {string} fieldName - The name of the field
+   * @returns {string|null} The field value or null
+   */
+  function getFieldValue(formEl, fieldName) {
+    const elements = formEl.elements[fieldName];
+
+    if (!elements) return null;
+
+    // Handle radio buttons (NodeList)
+    if (elements instanceof RadioNodeList) {
+      return elements.value || null;
+    }
+
+    // Handle single element (select, text input, checkbox)
+    if (elements.type === 'checkbox') {
+      return elements.checked ? elements.value || 'true' : null;
+    }
+
+    return elements.value || null;
+  }
+
+  /**
+   * Set value on a form field
+   * @param {HTMLFormElement} formEl - The form element
+   * @param {string} fieldName - The name of the field
+   * @param {string} value - The value to set
+   */
+  function setFieldValue(formEl, fieldName, value) {
+    const elements = formEl.elements[fieldName];
+
+    if (!elements) return;
+
+    // Handle radio buttons (NodeList)
+    if (elements instanceof RadioNodeList) {
+      // First, remove Webflow checked class from all radios in this group
+      for (const radio of elements) {
+        const customInput = radio.parentElement?.querySelector('.w-radio-input');
+        if (customInput) {
+          customInput.classList.remove('w--redirected-checked');
+        }
+      }
+
+      // Then set the matching radio as checked
+      for (const radio of elements) {
+        if (radio.value === value) {
+          radio.checked = true;
+
+          // Add Webflow checked class to the custom radio input
+          const customInput = radio.parentElement?.querySelector('.w-radio-input');
+          if (customInput) {
+            customInput.classList.add('w--redirected-checked');
+          }
+
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+          break;
+        }
+      }
+      return;
+    }
+
+    // Handle select element
+    if (elements.tagName === 'SELECT') {
+      elements.value = value;
+      elements.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+
+    // Handle checkbox
+    if (elements.type === 'checkbox') {
+      elements.checked = value === 'true' || value === elements.value;
+      elements.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+
+    // Handle text input
+    elements.value = value;
+    elements.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  /**
+   * Update ALL form fields with the same name across the page
+   * @param {string} fieldName - The field name to sync
+   * @param {*} value - The value to set
+   */
+  function syncAllFieldsWithName(fieldName, value) {
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+      const field = form.elements[fieldName];
+      if (field) {
+        setFieldValue(form, fieldName, value);
+      }
+    });
+  }
+
+  // ============================================================
+  // FORM SYNCING
+  // ============================================================
+
+  /**
+   * Handler for when a form field changes
+   * @param {HTMLFormElement} formEl - The form element
+   * @param {string} fieldName - The field name that changed
+   */
+  function syncFormFieldToStorage(formEl, fieldName) {
+    // Prevent infinite loop from programmatic field updates
+    if (isSyncing) return;
+
+    isSyncing = true;
+
+    try {
+      // Get new value
+      const value = getFieldValue(formEl, fieldName);
+
+      // CRITICAL: Don't save 'all' to storage - remove field instead
+      // This prevents interference with dpr-results.js filtering logic
+      if (value === 'all') {
+        removeLocalStorageField(fieldName);
+      } else {
+        updateLocalStorage(fieldName, value);
+      }
+
+      // Sync all other fields with same name
+      syncAllFieldsWithName(fieldName, value);
+
+      // Trigger filtering update if filter field changed
+      const filterFields = ['InsuranceReason', 'CoverageTier'];
+      if (filterFields.includes(fieldName)) {
+        applyPlanVisibilityAndOrder();
+      }
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  /**
+   * Populate all form fields on page load from localStorage
+   */
+  function prefillAllForms() {
+    const localData = getLocalStorageData() || {};
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+      Array.from(form.elements).forEach(element => {
+        if (!element.name) return;
+
+        const fieldName = element.name;
+        const value = localData[fieldName];
+
+        if (value !== undefined && value !== null) {
+          setFieldValue(form, fieldName, value);
+        }
+      });
+    });
+  }
+
+  /**
+   * Attach change listeners to all form fields
+   */
+  function setupFormChangeListeners() {
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+      Array.from(form.elements).forEach(element => {
+        if (!element.name) return;
+
+        const fieldName = element.name;
+
+        // Handle radio buttons (NodeList)
+        if (element instanceof RadioNodeList || element.type === 'radio') {
+          // For radio buttons, we need to attach to each individual radio
+          const radios = form.elements[fieldName];
+          if (radios instanceof RadioNodeList) {
+            for (const radio of radios) {
+              radio.addEventListener('change', () => syncFormFieldToStorage(form, fieldName));
+            }
+          }
+          return;
+        }
+
+        // Handle other field types
+        const eventType = element.type === 'text' ? 'input' : 'change';
+        element.addEventListener(eventType, () => syncFormFieldToStorage(form, fieldName));
+      });
+    });
+  }
+
+  // ============================================================
+  // UI STATE MANAGEMENT
+  // ============================================================
+
+  /**
+   * Hide all dynamic content blocks
+   */
+  function hideDynamicBlocks() {
+    const dynamicBlocks = document.querySelectorAll('[data-results="dynamic-block"]');
+
+    dynamicBlocks.forEach(block => {
+      block.style.display = 'none';
+    });
+
+    console.log(`Hidden ${dynamicBlocks.length} dynamic blocks`);
+  }
+
+  /**
+   * Show all dynamic content blocks
+   */
+  function showDynamicBlocks() {
+    const dynamicBlocks = document.querySelectorAll('[data-results="dynamic-block"]');
+
+    dynamicBlocks.forEach(block => {
+      block.style.display = '';  // Reset to CSS default
+    });
+
+    console.log(`Shown ${dynamicBlocks.length} dynamic blocks`);
+  }
+
+  // ============================================================
+  // RESULTS DISPLAY
+  // ============================================================
+
+  /**
+   * Reset all plan prices and buttons to default hidden state
+   */
+  function resetChart() {
+    const planItems = document.querySelectorAll('[dpr-results-plan]');
+
+    planItems.forEach(planItem => {
+      // Hide/reset price element
+      const priceEl = planItem.querySelector('[dpr-results-price="price"]');
+      if (priceEl) {
+        priceEl.textContent = '';
+        priceEl.style.display = 'none';
+      }
+
+      // Hide/reset button
+      const btn = planItem.querySelector('[dpr-results-apply="button"]');
+      if (btn) {
+        btn.style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = 'Apply Now';
+        delete btn.dataset.confirmation;
+      }
+
+      // Hide/reset Quebec call button
+      const quebecBtn = planItem.querySelector('[dpr-results-quebec="call"]');
+      if (quebecBtn) {
+        quebecBtn.style.display = 'none';
+      }
+
+      // Hide/reset hospital checkbox
+      const checkboxWrapper = planItem.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+      if (checkboxWrapper) {
+        checkboxWrapper.style.display = 'none';
+
+        const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
+        if (checkbox) {
+          checkbox.checked = false;
+        }
+      }
+    });
+
+    console.log(`Reset ${planItems.length} plan items`);
+  }
+
+  /**
+   * Fetch application URL from API using confirmation number
+   * @param {string} confirmationNumber - The quote confirmation number
+   * @returns {Promise<string>} Application URL
+   */
+  async function getApplicationUrl(confirmationNumber) {
+    const res = await fetch(
+      `${rootApiURL}/applicationUrl/${confirmationNumber}`
+    );
+
+    if (!res.ok) {
+      throw new Error(`Network error: ${res.status}`);
+    }
+
+    const raw = await res.text();
+    let url;
+
+    try {
+      url = JSON.parse(raw).ApplicationUrl;
+    } catch {
+      url = raw;
+    }
+
+    if (!url || !url.startsWith('http')) {
+      throw new Error('Invalid URL received');
+    }
+
+    return url;
+  }
+
+  /**
+   * Decorate URLs with GTM auto-linker for cross-domain tracking
+   * @param {string} url - The URL to decorate
+   * @returns {string} Decorated URL or original if decoration fails
+   */
+  function decorateWithGtmAutoLinker(url) {
+    try {
+      if (typeof gtag === 'undefined') {
+        return url;
+      }
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.style.position = 'absolute';
+      a.style.left = '-9999px';
+      document.body.appendChild(a);
+
+      a.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+
+      const decorated = a.href;
+      a.remove();
+      return decorated || url;
+    } catch (err) {
+      console.warn('Auto-linker decoration failed, using raw URL', err);
+      return url;
+    }
+  }
+
+  /**
+   * Show/hide plan buttons based on Province value
+   * @param {HTMLElement} planItem - The plan container element
+   * @param {boolean} isQuebec - Whether Province is 10 (Quebec)
+   */
+  function setPlanButtonVisibility(planItem, isQuebec) {
+    const applyBtn = planItem.querySelector('[dpr-results-apply="button"]');
+    const quebecBtn = planItem.querySelector('[dpr-results-quebec="call"]');
+
+    if (isQuebec) {
+      // Quebec: Show call button, hide apply button
+      if (quebecBtn) quebecBtn.style.display = 'block';
+      if (applyBtn) applyBtn.style.display = 'none';
+    } else {
+      // Other provinces: Show apply button, hide call button
+      if (applyBtn) applyBtn.style.display = 'flex';
+      if (quebecBtn) quebecBtn.style.display = 'none';
+    }
+  }
+
+  /**
+   * Handle hospital accommodation checkbox change
+   * Updates the displayed price when checkbox is toggled
+   * @param {HTMLElement} planItem - The plan card container
+   * @param {Object} hospitalOption - The hospital option data
+   * @param {boolean} isChecked - Whether checkbox is checked
+   */
+  function handleHospitalCheckboxChange(planItem, hospitalOption, isChecked) {
+    const priceEl = planItem.querySelector('[dpr-results-price="price"]');
+
+    if (!priceEl) {
+      console.warn('Price element not found for hospital checkbox change');
+      return;
+    }
+
+    // Get base premium from dataset
+    const basePremium = parseFloat(planItem.dataset.basePremium);
+
+    if (isNaN(basePremium)) {
+      console.warn('Invalid base premium stored in dataset');
+      return;
+    }
+
+    // Calculate new total
+    let newTotal = basePremium;
+    if (isChecked) {
+      newTotal += parseFloat(hospitalOption.OptionPremium);
+    }
+
+    // Update price display (whole numbers only, no cents)
+    const displayPrice = Math.round(newTotal);
+    priceEl.textContent = `$${displayPrice}`;
+
+    console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${displayPrice}`);
+  }
+
+  /**
+   * Populate plan prices and wire up Apply Now buttons
+   * @param {Object} resultsData - Full dpr_results_data structure
+   */
+  function fillChart(resultsData) {
+    resetChart();
+
+    // Get Province value to determine button visibility
+    const localData = getLocalStorageData();
+    const province = localData?.Province;
+    const isQuebec = province == 10; // Use == to handle string/number comparison
+
+    // Extract PlanQuotes from results
+    const quotes = resultsData?.results?.PlanQuotes || [];
+
+    if (!quotes || quotes.length === 0) {
+      console.warn('No quote data available to populate chart');
+      return;
+    }
+
+    console.log(`Populating ${quotes.length} plan quotes`);
+
+    quotes.forEach(quote => {
+      // Find matching plan item by PlanName
+      const planItem = document.querySelector(`[dpr-results-plan="${quote.PlanName}"]`);
+
+      if (!planItem) {
+        console.warn(`No matching plan element found for: ${quote.PlanName}`);
+        return;
+      }
+
+      // Populate price
+      const priceEl = planItem.querySelector('[dpr-results-price="price"]');
+      if (priceEl) {
+        const price = Math.round(parseFloat(quote.Premium));
+        priceEl.textContent = `$${price}`;
+        priceEl.style.display = 'block';
+      }
+
+      // Check for hospital accommodation option
+      const hospitalOption = quote.QuoteOptions?.find(
+        option => option.OptionName === 'Hospital Accommodation'
+      );
+
+      const checkboxWrapper = planItem.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+
+      if (hospitalOption && checkboxWrapper) {
+        // Store hospital option data and base premium for calculations
+        planItem.dataset.hospitalOption = JSON.stringify(hospitalOption);
+        planItem.dataset.basePremium = quote.Premium; // Store original price
+
+        // Show checkbox UI
+        checkboxWrapper.style.display = 'block';
+
+        // Populate text line
+        const textLine = checkboxWrapper.querySelector('[dpr-quote-hospital="text-line"]');
+        if (textLine) {
+          const price = Math.round(parseFloat(hospitalOption.OptionPremium));
+          textLine.textContent = `${hospitalAccommodationText}$${price}`;
+        }
+
+        // Wire up checkbox handler
+        const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
+        if (checkbox) {
+          // Reset checkbox state (no persistence)
+          checkbox.checked = false;
+
+          // Remove existing listeners (if any)
+          const newCheckbox = checkbox.cloneNode(true);
+          checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+
+          // Add change listener
+          newCheckbox.addEventListener('change', (e) => {
+            handleHospitalCheckboxChange(planItem, hospitalOption, e.target.checked);
+          });
+        }
+
+        console.log(`Hospital accommodation available for ${quote.PlanName}: $${hospitalOption.OptionPremium}`);
+      } else if (checkboxWrapper) {
+        // Hide checkbox UI if hospital option not available
+        checkboxWrapper.style.display = 'none';
+      }
+
+      // Wire up Apply Now button
+      const btn = planItem.querySelector('[dpr-results-apply="button"]');
+      if (btn) {
+        btn.dataset.confirmation = quote.ConfirmationNumber;
+
+        // Clone and replace to remove existing listeners
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
+        newBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+
+          const originalText = newBtn.textContent;
+          newBtn.disabled = true;
+          newBtn.textContent = 'Loading...';
+
+          try {
+            const url = await getApplicationUrl(newBtn.dataset.confirmation);
+            const finalUrl = decorateWithGtmAutoLinker(url);
+
+            // Short delay for GA hit to flush
+            setTimeout(() => {
+              window.location.assign(finalUrl);
+            }, 200);
+          } catch (err) {
+            console.error('Error getting application URL:', err);
+            newBtn.textContent = 'Error – Try Again';
+            newBtn.disabled = false;
+          }
+        });
+      }
+
+      // Set button visibility based on Province
+      setPlanButtonVisibility(planItem, isQuebec);
+    });
+
+    console.log('Chart population complete');
+  }
+
+  // ============================================================
+  // INITIALIZATION
+  // ============================================================
+
+  /**
+   * Main initialization function
+   */
+  function initialize() {
+    console.log('Plan Card Display: Initializing...');
+
+    // Prefill forms from localStorage
+    prefillAllForms();
+
+    // Setup form change listeners
+    setupFormChangeListeners();
+
+    // Trigger API call on page load
+    handlePageLoadApiCall();
+  }
+
+  // Run initialization when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initialize);
+  } else {
+    initialize();
+  }
+})();
