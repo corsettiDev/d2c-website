@@ -1375,7 +1375,7 @@
       const priceEl = planItem.querySelector('[dpr-results-price="price"]');
       if (priceEl) {
         const price = Math.round(parseFloat(quote.Premium));
-        priceEl.textContent = `$${price}`;
+        priceEl.textContent = price;
         priceEl.style.display = 'block';
       }
 
@@ -1400,7 +1400,7 @@
           // Display as whole number only (no cents)
           // Note: If cents are needed in future, use: price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)
           const price = Math.round(parseFloat(hospitalOption.OptionPremium));
-          textLine.textContent = `${hospitalAccommodationText}$${price}`;
+          textLine.textContent = `${hospitalAccommodationText}${price}`;
         }
 
         // Wire up checkbox handler
@@ -1498,7 +1498,7 @@
 
     // Update price display (whole numbers only, no cents)
     const displayPrice = Math.round(newTotal);
-    priceEl.textContent = `$${displayPrice}`;
+    priceEl.textContent = displayPrice;
 
     console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${displayPrice}`);
   }

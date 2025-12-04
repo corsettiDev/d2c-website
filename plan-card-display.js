@@ -1104,7 +1104,7 @@
 
     // Update price display (whole numbers only, no cents)
     const displayPrice = Math.round(newTotal);
-    priceEl.textContent = `$${displayPrice}`;
+    priceEl.textContent = displayPrice;
 
     console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${displayPrice}`);
   }
@@ -1144,7 +1144,7 @@
       const priceEl = planItem.querySelector('[dpr-results-price="price"]');
       if (priceEl) {
         const price = Math.round(parseFloat(quote.Premium));
-        priceEl.textContent = `$${price}`;
+        priceEl.textContent = price;
         priceEl.style.display = 'block';
       }
 
@@ -1167,7 +1167,7 @@
         const textLine = checkboxWrapper.querySelector('[dpr-quote-hospital="text-line"]');
         if (textLine) {
           const price = Math.round(parseFloat(hospitalOption.OptionPremium));
-          textLine.textContent = `${hospitalAccommodationText}$${price}`;
+          textLine.textContent = `${hospitalAccommodationText}${price}`;
         }
 
         // Wire up checkbox handler
