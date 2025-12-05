@@ -195,6 +195,175 @@
   }
 
   // ============================================================
+  // TOOLTIP REWIRING FUNCTIONS
+  // ============================================================
+
+  /**
+   * Re-wire tooltip components in a cloned card
+   * Replicates the initialization logic from tooltip-system.js
+   * @param {HTMLElement} clonedCard - The cloned plan card element
+   */
+  function rewireTooltips(clonedCard) {
+    const tooltipComponents = clonedCard.querySelectorAll('[data-tooltip="component"]');
+
+    tooltipComponents.forEach((component) => {
+      const icon = component.querySelector('[data-tooltip="icon"]');
+      const description = component.querySelector('[data-tooltip="description"]');
+      const isStatic = component.getAttribute("data-tooltip-style") === "static";
+
+      if (!icon || !description) return;
+
+      // Close all other tooltips except this one
+      const closeOthers = () => {
+        // Query within the CLONED card only, not the entire page
+        const allTooltipsInCard = clonedCard.querySelectorAll('[data-tooltip="description"]');
+        allTooltipsInCard.forEach((otherDesc) => {
+          if (otherDesc !== description) {
+            otherDesc.style.display = "none";
+          }
+        });
+      };
+
+      // Clone icon to remove existing listeners
+      const newIcon = icon.cloneNode(true);
+      icon.parentNode.replaceChild(newIcon, icon);
+
+      // Toggle this tooltip
+      newIcon.addEventListener("click", (e) => {
+        e.stopPropagation();
+
+        const isOpen = description.style.display === "block";
+
+        if (isOpen) {
+          description.style.display = "none";
+        } else {
+          closeOthers();
+          description.style.display = "block";
+        }
+      });
+
+      // Close tooltip on outside click — ONLY for floating tooltips
+      if (!isStatic) {
+        document.addEventListener("click", (e) => {
+          const clickedInside = component.contains(e.target);
+
+          if (!clickedInside) {
+            description.style.display = "none";
+          }
+        });
+      }
+    });
+
+    console.log(`[plan-injector] Rewired ${tooltipComponents.length} tooltip component(s)`);
+  }
+
+  /**
+   * Re-wire accordion tooltip components in a cloned card
+   * Replicates the initialization logic from the inline accordion script
+   * @param {HTMLElement} clonedCard - The cloned plan card element
+   */
+  function rewireAccordionTooltips(clonedCard) {
+    const accordions = clonedCard.querySelectorAll(".gsi-faq_accordion-icon.cc-plans-cms-modal");
+
+    // Helper function to open tooltip with animation
+    function openTooltip(tooltip) {
+      const isAlreadyOpen = tooltip.dataset.state === "open" || tooltip.dataset.state === "opening";
+      if (isAlreadyOpen) return;
+
+      tooltip.dataset.state = "opening";
+      tooltip.style.overflow = "hidden";
+
+      const hasMarginPadding = tooltip.querySelector(".gsi-modal-tooltip-padding.gsi-modal-margin-bottom");
+      if (hasMarginPadding) {
+        tooltip.style.marginBottom = "1rem";
+      }
+
+      tooltip.style.height = "auto";
+      const targetHeight = tooltip.scrollHeight + "px";
+      tooltip.style.height = "0px";
+      tooltip.offsetHeight; // Force reflow
+      tooltip.style.height = targetHeight;
+
+      function onEnd(e) {
+        if (e.propertyName !== "height") return;
+        tooltip.removeEventListener("transitionend", onEnd);
+        tooltip.style.height = "auto";
+        tooltip.style.overflow = "";
+        tooltip.dataset.state = "open";
+      }
+
+      tooltip.addEventListener("transitionend", onEnd);
+    }
+
+    // Helper function to close tooltip with animation
+    function closeTooltip(tooltip) {
+      const isOpen = tooltip.dataset.state === "open" || tooltip.dataset.state === "opening";
+      if (!isOpen) return;
+
+      tooltip.dataset.state = "closing";
+      tooltip.style.overflow = "hidden";
+
+      const hasMarginPadding = tooltip.querySelector(".gsi-modal-tooltip-padding.gsi-modal-margin-bottom");
+      if (hasMarginPadding) {
+        tooltip.style.marginBottom = "0";
+      }
+
+      const startHeight = tooltip.offsetHeight;
+      tooltip.style.height = startHeight + "px";
+      tooltip.offsetHeight; // Force reflow
+      tooltip.style.height = "0px";
+
+      function onEnd(e) {
+        if (e.propertyName !== "height") return;
+        tooltip.removeEventListener("transitionend", onEnd);
+        tooltip.style.height = "0px";
+        tooltip.dataset.state = "closed";
+      }
+
+      tooltip.addEventListener("transitionend", onEnd);
+    }
+
+    // Initialize each accordion
+    accordions.forEach(function (accordion) {
+      const wrappers = accordion.querySelectorAll(".tooltip-wrapper.gsi-tooltip");
+      const tooltips = accordion.querySelectorAll(".gsi-modal-tooltip");
+
+      wrappers.forEach(function (wrapper, index) {
+        const button = wrapper.querySelector(".gsi-tooltip-button");
+        const tooltip = tooltips[index];
+
+        if (!button || !tooltip) return;
+
+        // Set initial state
+        tooltip.style.height = "0px";
+        tooltip.style.marginBottom = "0";
+        tooltip.dataset.state = "closed";
+
+        // Clone button to remove existing listeners
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+
+        // Attach click listener
+        newButton.addEventListener("click", function (e) {
+          e.stopPropagation();
+
+          const isOpen = tooltip.dataset.state === "open" || tooltip.dataset.state === "opening";
+
+          if (isOpen) {
+            closeTooltip(tooltip);
+            newButton.setAttribute("aria-expanded", "false");
+          } else {
+            openTooltip(tooltip);
+            newButton.setAttribute("aria-expanded", "true");
+          }
+        });
+      });
+    });
+
+    console.log(`[plan-injector] Rewired ${accordions.length} accordion tooltip(s)`);
+  }
+
+  // ============================================================
   // BUTTON VISIBILITY FUNCTIONS
   // ============================================================
 
@@ -271,6 +440,12 @@
       compareCheckbox.disabled = true;
       compareCheckbox.style.opacity = '0.5';
     }
+
+    // Re-wire simple tooltips
+    rewireTooltips(clonedCard);
+
+    // Re-wire accordion tooltips
+    rewireAccordionTooltips(clonedCard);
   }
 
   // ============================================================
