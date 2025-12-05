@@ -1207,11 +1207,12 @@
         // Wire up Apply Now button
         const btn = block.querySelector('[dpr-results-apply="button"]');
         if (btn) {
-          btn.dataset.confirmation = quote.ConfirmationNumber;
-
           // Clone and replace to remove existing listeners
           const newBtn = btn.cloneNode(true);
           btn.parentNode.replaceChild(newBtn, btn);
+
+          // Set confirmation number on the cloned element
+          newBtn.dataset.confirmation = quote.ConfirmationNumber;
 
           newBtn.addEventListener('click', async (e) => {
             e.preventDefault();
