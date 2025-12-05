@@ -253,6 +253,25 @@
       }
     }
 
+    // Clear tooltip initialization flags from cloned elements
+    // This allows tooltip-system to re-initialize them
+    const tooltipIcons = clonedCard.querySelectorAll('[data-tooltip="icon"]');
+    tooltipIcons.forEach(icon => {
+      delete icon.dataset.tooltipInitialized;
+    });
+
+    const accordionButtons = clonedCard.querySelectorAll('.gsi-tooltip-button');
+    accordionButtons.forEach(button => {
+      delete button.dataset.accordionInitialized;
+    });
+
+    // Re-initialize tooltips on cloned card using global TooltipSystem API
+    // This follows the same direct re-wiring pattern as Apply buttons and hospital checkboxes
+    if (window.TooltipSystem && window.TooltipSystem.initialize) {
+      window.TooltipSystem.initialize(clonedCard);
+      console.log('[plan-injector] Re-initialized tooltips on cloned card');
+    }
+
     // Disable comparison checkbox (injected cards don't participate in comparison)
     const compareCheckbox = clonedCard.querySelector('[data-compare-trigger]');
     if (compareCheckbox) {
