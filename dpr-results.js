@@ -23,7 +23,7 @@
 
   // Hospital accommodation text prefix
   // setup global variable for attribute usage
-  const hospitalAccommodationText = "Add optional hospital accommodation for ";
+  const hospitalAccommodationText = document.currentScript.getAttribute("data-hospital-text") || "Add optional hospital accommodation for $";
 
   // ============================================================
   // STORAGE HELPER FUNCTIONS

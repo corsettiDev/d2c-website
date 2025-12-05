@@ -13,7 +13,7 @@
   const filterStyle = document.currentScript.getAttribute("data-filter-style") || "showAll";
 
   // Hospital accommodation text prefix
-  const hospitalAccommodationText = "Add optional hospital accommodation for ";
+  const hospitalAccommodationText = document.currentScript.getAttribute("data-hospital-text") || "Add optional hospital accommodation for $";
 
   // Comparison feature state
   let selectedPlans = [];
