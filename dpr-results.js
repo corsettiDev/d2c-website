@@ -1209,38 +1209,44 @@
     const planItems = document.querySelectorAll('[dpr-results-plan]');
 
     planItems.forEach(planItem => {
-      // Hide/reset price element
-      const priceEl = planItem.querySelector('[dpr-results-price="price"]');
-      if (priceEl) {
-        priceEl.textContent = '';
-        priceEl.style.display = 'none';
-      }
+      // Find all dynamic blocks or fall back to planItem
+      const dynamicBlocks = planItem.querySelectorAll('[data-results="dynamic-block"]');
+      const blocksToProcess = dynamicBlocks.length > 0 ? Array.from(dynamicBlocks) : [planItem];
 
-      // Hide/reset button
-      const btn = planItem.querySelector('[dpr-results-apply="button"]');
-      if (btn) {
-        btn.style.display = 'none';
-        btn.disabled = false;
-        btn.textContent = 'Apply Now';
-        delete btn.dataset.confirmation;
-      }
-
-      // Hide/reset Quebec call button
-      const quebecBtn = planItem.querySelector('[dpr-results-quebec="call"]');
-      if (quebecBtn) {
-        quebecBtn.style.display = 'none';
-      }
-
-      // Hide/reset hospital checkbox
-      const checkboxWrapper = planItem.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
-      if (checkboxWrapper) {
-        checkboxWrapper.style.display = 'none';
-
-        const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
-        if (checkbox) {
-          checkbox.checked = false;
+      blocksToProcess.forEach(block => {
+        // Hide/reset price element
+        const priceEl = block.querySelector('[dpr-results-price="price"]');
+        if (priceEl) {
+          priceEl.textContent = '';
+          priceEl.style.display = 'none';
         }
-      }
+
+        // Hide/reset button
+        const btn = block.querySelector('[dpr-results-apply="button"]');
+        if (btn) {
+          btn.style.display = 'none';
+          btn.disabled = false;
+          btn.textContent = 'Apply Now';
+          delete btn.dataset.confirmation;
+        }
+
+        // Hide/reset Quebec call button
+        const quebecBtn = block.querySelector('[dpr-results-quebec="call"]');
+        if (quebecBtn) {
+          quebecBtn.style.display = 'none';
+        }
+
+        // Hide/reset hospital checkbox
+        const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+        if (checkboxWrapper) {
+          checkboxWrapper.style.display = 'none';
+
+          const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
+          if (checkbox) {
+            checkbox.checked = false;
+          }
+        }
+      });
     });
 
     console.log(`Reset ${planItems.length} plan items`);
@@ -1371,94 +1377,100 @@
         return;
       }
 
-      // Populate price
-      const priceEl = planItem.querySelector('[dpr-results-price="price"]');
-      if (priceEl) {
-        const price = Math.round(parseFloat(quote.Premium));
-        priceEl.textContent = price;
-        priceEl.style.display = 'block';
-      }
+      // Find all dynamic blocks or fall back to planItem
+      const dynamicBlocks = planItem.querySelectorAll('[data-results="dynamic-block"]');
+      const blocksToProcess = dynamicBlocks.length > 0 ? Array.from(dynamicBlocks) : [planItem];
 
-      // Check for hospital accommodation option
-      const hospitalOption = quote.QuoteOptions?.find(
-        option => option.OptionName === 'Hospital Accommodation'
-      );
-
-      const checkboxWrapper = planItem.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
-
-      if (hospitalOption && checkboxWrapper) {
-        // Store hospital option data and base premium for calculations
-        planItem.dataset.hospitalOption = JSON.stringify(hospitalOption);
-        planItem.dataset.basePremium = quote.Premium; // Store original price
-
-        // Show checkbox UI
-        checkboxWrapper.style.display = 'block';
-
-        // Populate text line
-        const textLine = checkboxWrapper.querySelector('[dpr-quote-hospital="text-line"]');
-        if (textLine) {
-          // Display as whole number only (no cents)
-          // Note: If cents are needed in future, use: price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)
-          const price = Math.round(parseFloat(hospitalOption.OptionPremium));
-          textLine.textContent = `${hospitalAccommodationText}${price}`;
+      blocksToProcess.forEach(block => {
+        // Populate price
+        const priceEl = block.querySelector('[dpr-results-price="price"]');
+        if (priceEl) {
+          const price = Math.round(parseFloat(quote.Premium));
+          priceEl.textContent = price;
+          priceEl.style.display = 'block';
         }
 
-        // Wire up checkbox handler
-        const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
-        if (checkbox) {
-          // Reset checkbox state (no persistence)
-          checkbox.checked = false;
+        // Check for hospital accommodation option
+        const hospitalOption = quote.QuoteOptions?.find(
+          option => option.OptionName === 'Hospital Accommodation'
+        );
 
-          // Remove existing listeners (if any)
-          const newCheckbox = checkbox.cloneNode(true);
-          checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+        const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
 
-          // Add change listener
-          newCheckbox.addEventListener('change', (e) => {
-            handleHospitalCheckboxChange(planItem, hospitalOption, e.target.checked);
+        if (hospitalOption && checkboxWrapper) {
+          // Store hospital option data and base premium for calculations
+          planItem.dataset.hospitalOption = JSON.stringify(hospitalOption);
+          planItem.dataset.basePremium = quote.Premium; // Store original price
+
+          // Show checkbox UI
+          checkboxWrapper.style.display = 'block';
+
+          // Populate text line
+          const textLine = checkboxWrapper.querySelector('[dpr-quote-hospital="text-line"]');
+          if (textLine) {
+            // Display as whole number only (no cents)
+            // Note: If cents are needed in future, use: price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)
+            const price = Math.round(parseFloat(hospitalOption.OptionPremium));
+            textLine.textContent = `${hospitalAccommodationText}${price}`;
+          }
+
+          // Wire up checkbox handler
+          const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
+          if (checkbox) {
+            // Reset checkbox state (no persistence)
+            checkbox.checked = false;
+
+            // Remove existing listeners (if any)
+            const newCheckbox = checkbox.cloneNode(true);
+            checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+
+            // Add change listener
+            newCheckbox.addEventListener('change', (e) => {
+              handleHospitalCheckboxChange(planItem, block, hospitalOption, e.target.checked);
+            });
+          }
+
+          console.log(`Hospital accommodation available for ${quote.PlanName}: $${hospitalOption.OptionPremium}`);
+        } else if (checkboxWrapper) {
+          // Hide checkbox UI if hospital option not available
+          checkboxWrapper.style.display = 'none';
+        }
+
+        // Wire up Apply Now button
+        const btn = block.querySelector('[dpr-results-apply="button"]');
+        if (btn) {
+          btn.dataset.confirmation = quote.ConfirmationNumber;
+
+          // Clone and replace to remove existing listeners
+          const newBtn = btn.cloneNode(true);
+          btn.parentNode.replaceChild(newBtn, btn);
+
+          newBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+
+            const originalText = newBtn.textContent;
+            newBtn.disabled = true;
+            newBtn.textContent = 'Loading...';
+
+            try {
+              const url = await getApplicationUrl(newBtn.dataset.confirmation);
+              const finalUrl = decorateWithGtmAutoLinker(url);
+
+              // Short delay for GA hit to flush
+              setTimeout(() => {
+                window.location.assign(finalUrl);
+              }, 200);
+            } catch (err) {
+              console.error('Error getting application URL:', err);
+              newBtn.textContent = 'Error – Try Again';
+              newBtn.disabled = false;
+            }
           });
         }
 
-        console.log(`Hospital accommodation available for ${quote.PlanName}: $${hospitalOption.OptionPremium}`);
-      } else if (checkboxWrapper) {
-        // Hide checkbox UI if hospital option not available
-        checkboxWrapper.style.display = 'none';
-      }
-
-      // Wire up Apply Now button
-      const btn = planItem.querySelector('[dpr-results-apply="button"]');
-      if (btn) {
-        btn.dataset.confirmation = quote.ConfirmationNumber;
-
-        // Clone and replace to remove existing listeners
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-
-        newBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-
-          const originalText = newBtn.textContent;
-          newBtn.disabled = true;
-          newBtn.textContent = 'Loading...';
-
-          try {
-            const url = await getApplicationUrl(newBtn.dataset.confirmation);
-            const finalUrl = decorateWithGtmAutoLinker(url);
-
-            // Short delay for GA hit to flush
-            setTimeout(() => {
-              window.location.assign(finalUrl);
-            }, 200);
-          } catch (err) {
-            console.error('Error getting application URL:', err);
-            newBtn.textContent = 'Error – Try Again';
-            newBtn.disabled = false;
-          }
-        });
-      }
-
-      // Set button visibility based on Province
-      setPlanButtonVisibility(planItem, isQuebec);
+        // Set button visibility based on Province
+        setPlanButtonVisibility(block, isQuebec);
+      });
     });
 
     console.log('Chart population complete');
@@ -1471,11 +1483,12 @@
    * Handle hospital accommodation checkbox change
    * Updates the displayed price when checkbox is toggled
    * @param {HTMLElement} planItem - The plan card container
+   * @param {HTMLElement} block - The specific dynamic block container
    * @param {Object} hospitalOption - The hospital option data
    * @param {boolean} isChecked - Whether checkbox is checked
    */
-  function handleHospitalCheckboxChange(planItem, hospitalOption, isChecked) {
-    const priceEl = planItem.querySelector('[dpr-results-price="price"]');
+  function handleHospitalCheckboxChange(planItem, block, hospitalOption, isChecked) {
+    const priceEl = block.querySelector('[dpr-results-price="price"]');
 
     if (!priceEl) {
       console.warn('Price element not found for hospital checkbox change');
