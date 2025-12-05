@@ -1,5 +1,5 @@
 (function() {
-  document.addEventListener("DOMContentLoaded", () => {
+  const initialize = () => {
     const components = document.querySelectorAll('[data-tooltip="component"]');
 
     components.forEach((component) => {
@@ -47,5 +47,17 @@
         });
       }
     });
-  });
+  };
+
+  // Wait for Webflow CMS content to be ready
+  // Webflow.push() runs after CMS content is rendered
+  if (window.Webflow && window.Webflow.push) {
+    window.Webflow.push(initialize);
+  } else if (document.readyState === 'loading') {
+    // Fallback: wait for page load (includes all resources and CMS content)
+    window.addEventListener('load', initialize);
+  } else {
+    // Page already loaded
+    initialize();
+  }
 })();
