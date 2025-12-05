@@ -1437,7 +1437,7 @@
         }
 
         // Wire up Apply Now button
-        const btn = block.querySelector('[dpr-results-apply="button"]');
+        const btn = block.querySelector(`[dpr-results-apply="${quote.PlanName}"]`);
         if (btn) {
           // Clone and replace to remove existing listeners
           const newBtn = btn.cloneNode(true);
