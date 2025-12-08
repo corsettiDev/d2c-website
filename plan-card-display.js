@@ -270,10 +270,14 @@
   async function handlePageLoadApiCall() {
     console.log('Plan Card Display: Starting page load API call...');
 
+    // Track actual API success/failure status
+    let apiSuccess = false;
+
     // Step 1: Validate required fields
     if (!validateApiFields()) {
       console.warn('Missing API-required fields - hiding dynamic blocks');
       hideDynamicBlocks();
+      apiSuccess = false;
       // Don't return yet - need to dispatch event below
     } else {
       // Step 2: Show skeleton loaders
@@ -287,6 +291,7 @@
         if (!payload) {
           console.error('Failed to build API payload');
           hideDynamicBlocks();
+          apiSuccess = false;
         } else {
           console.log('Fetching quotes with payload:', payload);
           const apiResponse = await fetchQuotes(payload);
@@ -296,14 +301,17 @@
             showDynamicBlocks();
             fillChart({ results: apiResponse, dpr_local_storage: localData });
             applyPlanVisibilityAndOrder();
+            apiSuccess = true;
           } else {
             console.error('Page load API call failed');
             hideDynamicBlocks();
+            apiSuccess = false;
           }
         }
       } catch (error) {
         console.error('Page load API call error:', error);
         hideDynamicBlocks();
+        apiSuccess = false;
       } finally {
         // Step 4: Always hide skeleton loaders
         hideSkeletonLoaders();
@@ -312,9 +320,13 @@
 
     // Step 5: Always dispatch event to notify plan-injector
     // This runs whether API succeeded, failed, or validation failed
-    window.dispatchEvent(new CustomEvent('plans-populated', {
-      detail: { success: true }
-    }));
+    // Use setTimeout to ensure event fires after plan-injector listener is registered
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('plans-populated', {
+        detail: { success: apiSuccess }
+      }));
+      console.log(`Plan Card Display: Dispatched 'plans-populated' event with success=${apiSuccess}`);
+    }, 0);
   }
 
   // ============================================================

@@ -386,7 +386,16 @@
     // Use { once: true } to prevent duplicate injections if event fires multiple times
     window.addEventListener('plans-populated', (event) => {
       console.log('[plan-injector] Plans populated, starting injection...', event.detail);
+
+      // Always inject, even if API failed (static content still useful)
       processAllInjections();
+
+      // Log the API status for debugging
+      if (event.detail && event.detail.success) {
+        console.log('[plan-injector] API succeeded - injected cards have full data');
+      } else {
+        console.log('[plan-injector] API failed - injected cards show static content only');
+      }
     }, { once: true });
   }
 
