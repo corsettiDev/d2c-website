@@ -229,29 +229,39 @@
     const localData = getLocalStorageData();
     const isQuebec = localData?.Province == 10;
 
-    // Re-wire Apply button
-    const applyBtn = clonedCard.querySelector('[dpr-results-apply="button"]');
-    if (applyBtn && applyBtn.dataset.confirmation) {
-      attachApplyButtonHandler(applyBtn, applyBtn.dataset.confirmation);
-    }
+    // Find all dynamic blocks in the cloned card (or use clonedCard as single block)
+    const dynamicBlocks = clonedCard.querySelectorAll('[data-results="dynamic-block"]');
+    const blocksToProcess = dynamicBlocks.length > 0 ? Array.from(dynamicBlocks) : [clonedCard];
 
-    // Re-wire hospital checkbox
-    const checkboxWrapper = clonedCard.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
-    if (checkboxWrapper && checkboxWrapper.style.display !== 'none') {
-      const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
-
-      // Parse hospital option data from dataset
-      let hospitalOption = null;
-      try {
-        hospitalOption = JSON.parse(clonedCard.dataset.hospitalOption || 'null');
-      } catch (e) {
-        console.warn('[plan-injector] Failed to parse hospital option data:', e);
+    // Process each dynamic block independently
+    blocksToProcess.forEach(block => {
+      // Re-wire Apply button for this block
+      const applyBtn = block.querySelector('[dpr-results-apply="button"]');
+      if (applyBtn && applyBtn.dataset.confirmation) {
+        attachApplyButtonHandler(applyBtn, applyBtn.dataset.confirmation);
       }
 
-      if (checkbox && hospitalOption) {
-        attachHospitalCheckboxHandler(checkbox, clonedCard, hospitalOption);
+      // Re-wire hospital checkbox for this block
+      const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+      if (checkboxWrapper && checkboxWrapper.style.display !== 'none') {
+        const checkbox = checkboxWrapper.querySelector('[dpr-quote-hospital="check-trigger"]');
+
+        // Parse hospital option data from dataset (stored on clonedCard, not block)
+        let hospitalOption = null;
+        try {
+          hospitalOption = JSON.parse(clonedCard.dataset.hospitalOption || 'null');
+        } catch (e) {
+          console.warn('[plan-injector] Failed to parse hospital option data:', e);
+        }
+
+        if (checkbox && hospitalOption) {
+          attachHospitalCheckboxHandler(checkbox, clonedCard, hospitalOption);
+        }
       }
-    }
+
+      // Set Quebec/non-Quebec button visibility for this block
+      setPlanButtonVisibility(block, isQuebec);
+    });
 
     // Clear tooltip initialization flags from cloned elements
     // This allows tooltip-system to re-initialize them
@@ -278,9 +288,6 @@
       compareCheckbox.disabled = true;
       compareCheckbox.style.opacity = '0.5';
     }
-
-    // Set Quebec/non-Quebec button visibility
-    setPlanButtonVisibility(clonedCard, isQuebec);
   }
 
   // ============================================================
