@@ -188,7 +188,7 @@
 
       // Update price display (whole numbers only, no cents)
       const displayPrice = Math.round(newTotal);
-      priceEl.textContent = `$${displayPrice}`;
+      priceEl.textContent = displayPrice;
     });
   }
 
