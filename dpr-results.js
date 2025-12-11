@@ -25,6 +25,9 @@
   // setup global variable for attribute usage
   const hospitalAccommodationText = document.currentScript.getAttribute("data-hospital-text") || "Add optional hospital accommodation for $";
 
+  // Apply button text
+  const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
+
   // ============================================================
   // STORAGE HELPER FUNCTIONS
   // ============================================================
@@ -1226,7 +1229,7 @@
         if (btn) {
           btn.style.display = 'none';
           btn.disabled = false;
-          btn.textContent = 'Apply Now';
+          btn.textContent = applyButtonText;
           delete btn.dataset.confirmation;
         }
 
