@@ -10,6 +10,7 @@
   const rootApiURL = document.currentScript.getAttribute("data-api-url") || "https://qagsd2cins.greenshield.ca";
 
   // Filter style mode - controls whether filtering hides or just reorders plans
+  // Options: "showAll" (reorder only), "limit" (reorder + hide), "hideOnly" (hide without reorder)
   const filterStyle = document.currentScript.getAttribute("data-filter-style") || "showAll";
 
   // Hospital accommodation text prefix
@@ -448,7 +449,10 @@
 
   /**
    * Apply plan visibility and ordering based on current filter state
-   * All plans stay visible - filtered plans are just reordered to appear first
+   * Behavior depends on filterStyle mode:
+   * - showAll: Reorder plans (filtered first), all visible
+   * - limit: Reorder plans (filtered first), hide non-matching
+   * - hideOnly: Preserve original order, hide non-matching
    */
   function applyPlanVisibilityAndOrder() {
     // Step 1: Get current filter state
@@ -470,16 +474,8 @@
       return;
     }
 
-    // Step 3: Get parent container
+    // Step 3: Separate filtered from non-filtered plans
     const planArray = Array.from(allPlanElements);
-    const planParent = planArray[0]?.parentElement;
-
-    if (!planParent) {
-      console.warn('Could not find plan parent container');
-      return;
-    }
-
-    // Step 4: Separate filtered from non-filtered plans
     const filteredElements = [];
     const otherElements = [];
 
@@ -492,21 +488,37 @@
       }
     });
 
-    // Step 5: Reorder DOM - filtered plans first (in existing DOM order), then others
-    planArray.forEach(el => el.remove());
-    filteredElements.forEach(el => planParent.appendChild(el));
-    otherElements.forEach(el => planParent.appendChild(el));
-
-    // Step 6: Apply visibility based on filter style
-    if (filterStyle === 'limit') {
-      // Limit mode: Show only filtered plans, hide others
+    // Step 4: Apply filtering based on mode
+    if (filterStyle === 'hideOnly') {
+      // hideOnly mode: Preserve original DOM order, just hide non-matching
       filteredElements.forEach(el => el.style.display = '');
       otherElements.forEach(el => el.style.display = 'none');
-      console.log(`Applied filtering (limit mode): ${filteredElements.length} shown, ${otherElements.length} hidden`);
+      console.log(`Applied filtering (hideOnly mode): ${filteredElements.length} shown, ${otherElements.length} hidden, order preserved`);
     } else {
-      // ShowAll mode (default): All plans visible, just reordered
-      allPlanElements.forEach(el => el.style.display = '');
-      console.log(`Applied filtering (showAll mode): ${filteredElements.length} filtered, ${otherElements.length} others`);
+      // For 'limit' and 'showAll' modes: Reorder DOM first
+      const planParent = planArray[0]?.parentElement;
+
+      if (!planParent) {
+        console.warn('Could not find plan parent container');
+        return;
+      }
+
+      // Reorder DOM - filtered plans first (in existing DOM order), then others
+      planArray.forEach(el => el.remove());
+      filteredElements.forEach(el => planParent.appendChild(el));
+      otherElements.forEach(el => planParent.appendChild(el));
+
+      // Then apply visibility based on specific mode
+      if (filterStyle === 'limit') {
+        // Limit mode: Show only filtered plans, hide others
+        filteredElements.forEach(el => el.style.display = '');
+        otherElements.forEach(el => el.style.display = 'none');
+        console.log(`Applied filtering (limit mode): ${filteredElements.length} shown, ${otherElements.length} hidden`);
+      } else {
+        // ShowAll mode (default): All plans visible, just reordered
+        allPlanElements.forEach(el => el.style.display = '');
+        console.log(`Applied filtering (showAll mode): ${filteredElements.length} filtered, ${otherElements.length} others`);
+      }
     }
   }
 
