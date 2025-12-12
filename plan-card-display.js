@@ -1380,6 +1380,10 @@
     // Prefill forms from localStorage
     prefillAllForms();
 
+    // Apply initial filtering based on stored filter values
+    // This ensures plans are filtered immediately, even before API call completes
+    applyPlanVisibilityAndOrder();
+
     // Setup form change listeners
     setupFormChangeListeners();
 
