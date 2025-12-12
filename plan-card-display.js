@@ -41,6 +41,7 @@
   // Value: Array of plan names to show for this combination
   const STATIC_FILTER_SCENARIOS = {
     '0:comprehensive': ['LINK 4', 'LINK 3', 'ZONE 7', 'ZONE 6'],
+    '1:all': ['LINK 4', 'LINK 3', 'LINK 2', 'LINK 1', 'ZONE 7', 'ZONE 6', 'ZONE 5', 'ZONE 4', 'ZONE FUNDAMENTAL PLAN'],
     '1:basic': ['LINK 2', 'LINK 1', 'ZONE 4', 'ZONE FUNDAMENTAL PLAN'],
     '1:comprehensive': ['LINK 4', 'LINK 3', 'LINK 1', 'ZONE 4'],
     '2:all': ['LINK 4', 'LINK 3', 'LINK 2', 'ZONE 7', 'ZONE 6', 'ZONE 5', 'ZONE FUNDAMENTAL PLAN', 'ZONE 3', 'ZONE 2'],
