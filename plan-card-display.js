@@ -35,6 +35,18 @@
     'comprehensive': ['LINK 1', 'LINK 2', 'LINK 3', 'LINK 4', 'ZONE 2', 'ZONE 3', 'ZONE 4', 'ZONE 5', 'ZONE 6', 'ZONE 7']
   };
 
+  // Static filter scenarios - checked BEFORE dynamic intersection logic
+  // These specific combinations override the standard intersection behavior
+  // Key format: "InsuranceReason:CoverageTier"
+  // Value: Array of plan names to show for this combination
+  const STATIC_FILTER_SCENARIOS = {
+    '0:comprehensive': ['LINK 4', 'LINK 3', 'ZONE 7', 'ZONE 6'],
+    '1:basic': ['LINK 2', 'LINK 1', 'ZONE 4', 'ZONE FUNDAMENTAL PLAN'],
+    '1:comprehensive': ['LINK 4', 'LINK 3', 'LINK 1', 'ZONE 4'],
+    '2:all': ['LINK 4', 'LINK 3', 'LINK 2', 'ZONE 7', 'ZONE 6', 'ZONE 5', 'ZONE FUNDAMENTAL PLAN', 'ZONE 3', 'ZONE 2'],
+    '2:comprehensive': ['LINK 4', 'ZONE 7', 'ZONE 3']
+  };
+
   // ============================================================
   // STORAGE HELPER FUNCTIONS
   // ============================================================
@@ -355,12 +367,23 @@
 
   /**
    * Get list of plan names that match current filter criteria
+   * Checks static filter scenarios FIRST, then falls back to dynamic logic
    * @param {Object} filterState - Current filter values
    * @returns {string[]|null} Array of matching plan names, or null if no filtering
    */
   function getFilteredPlans(filterState) {
     const { InsuranceReason, CoverageTier } = filterState;
 
+    // Check for static filter scenarios FIRST
+    const staticKey = `${InsuranceReason}:${CoverageTier}`;
+    const staticScenario = STATIC_FILTER_SCENARIOS[staticKey];
+
+    if (staticScenario) {
+      console.log(`Using static filter scenario: ${staticKey}`);
+      return staticScenario;
+    }
+
+    // Fall back to existing dynamic logic
     // Get plan sets for each filter
     const insuranceSet = INSURANCE_REASON_SETS[InsuranceReason];
     const tierSet = COVERAGE_TIER_SETS[CoverageTier];
