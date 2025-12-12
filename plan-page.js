@@ -143,9 +143,16 @@
    * @returns {Promise<string>} Application URL
    */
   async function getApplicationUrl(confirmationNumber) {
-    const res = await fetch(
-      `${rootApiURL}/applicationUrl/${confirmationNumber}`
-    );
+    // Build base URL
+    let apiUrl = `${rootApiURL}/applicationUrl/${confirmationNumber}`;
+
+    // Append lang parameter if page is French Canadian
+    const htmlLang = document.documentElement.lang;
+    if (htmlLang && htmlLang.toLowerCase() === 'fr-ca') {
+      apiUrl += '?lang=fr';
+    }
+
+    const res = await fetch(apiUrl);
 
     if (!res.ok) {
       throw new Error(`Network error: ${res.status}`);
