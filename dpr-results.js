@@ -650,7 +650,7 @@
       // Contact information
       EmailAddress: sessionData.EmailAddress || null,
       PhoneNumber: sessionData.PhoneNumber || null,
-      MarketingPermission: sessionData.MarketingPermission === 'true' || sessionData.MarketingPermission === true,
+      MarketingPermission: sessionData.MarketingPermission === 'true' || sessionData.MarketingPermission === true || sessionData.MarketingPermission === 'on',
 
       // Personal information
       FirstName: sessionData.FirstName || null,
