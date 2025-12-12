@@ -326,6 +326,9 @@
     // This runs whether API succeeded, failed, or validation failed
     // Use setTimeout to ensure event fires after plan-injector listener is registered
     setTimeout(() => {
+      // Store event data in global flag for plan-injector to check (handles race condition)
+      window.__plansPopulatedData = { success: apiSuccess };
+
       window.dispatchEvent(new CustomEvent('plans-populated', {
         detail: { success: apiSuccess }
       }));

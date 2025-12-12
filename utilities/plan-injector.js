@@ -382,6 +382,23 @@
   function initialize() {
     console.log('[plan-injector] Waiting for plans to be populated...');
 
+    // Check if plans were already populated (handles race condition)
+    if (window.__plansPopulatedData) {
+      console.log('[plan-injector] Plans already populated, processing immediately...', window.__plansPopulatedData);
+
+      // Process injections immediately
+      processAllInjections();
+
+      // Log the API status for debugging
+      if (window.__plansPopulatedData.success) {
+        console.log('[plan-injector] API succeeded - injected cards have full data');
+      } else {
+        console.log('[plan-injector] API failed - injected cards show static content only');
+      }
+
+      return; // Exit early, no need to add listener
+    }
+
     // Listen for plans-populated event from plan-card-display.js
     // Use { once: true } to prevent duplicate injections if event fires multiple times
     window.addEventListener('plans-populated', (event) => {
