@@ -643,7 +643,7 @@
       Province: Number(localData.Province),
       Age: Number(localData.Age),
       Dependents: Number(localData.Dependents || 0),
-      CoverageTier: Number(localData.CoverageTier),
+      CoverageTier: localData.CoverageTier,
       InsuranceReason: localData.InsuranceReason ? Number(localData.InsuranceReason) : null,
 
       // Coverage options (new fields in DPR system)
