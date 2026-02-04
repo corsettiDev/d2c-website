@@ -28,6 +28,9 @@
   // Apply button text
   const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
 
+  // Sort by API Recommendation field instead of filter-based logic
+  const sortByRecommendation = document.currentScript.getAttribute("data-sort-by-recommendation") === "true";
+
   // ============================================================
   // STORAGE HELPER FUNCTIONS
   // ============================================================
@@ -1093,6 +1096,23 @@
   }
 
   /**
+   * Get top 3 plan names from API response based on Recommendation field
+   * @param {Array} planQuotes - Array of plan quotes from API
+   * @returns {string[]} Array of plan names sorted by Recommendation (1, 2, 3)
+   */
+  function getTopPlansFromRecommendation(planQuotes) {
+    if (!planQuotes || !Array.isArray(planQuotes)) return [];
+
+    // Filter plans with Recommendation 1, 2, or 3 and sort by Recommendation
+    const recommendedPlans = planQuotes
+      .filter(plan => plan.Recommendation >= 1 && plan.Recommendation <= 3)
+      .sort((a, b) => a.Recommendation - b.Recommendation)
+      .map(plan => plan.PlanName);
+
+    return recommendedPlans;
+  }
+
+  /**
    * Get current filter state from localStorage
    * @returns {Object|null} Current filter values or null if unavailable
    */
@@ -1118,14 +1138,34 @@
    * 1. Determines top 3 plans based on filters
    * 2. Applies visibility based on 'plans' mode (suggested vs all)
    * 3. Reorders DOM so top 3 always appear first
+   * @param {boolean} useRecommendation - If true and sortByRecommendation is enabled, use API recommendation order. Defaults to false (static filter-based order).
    */
-  function applyPlanVisibilityAndOrder() {
+  function applyPlanVisibilityAndOrder(useRecommendation = false) {
     // Step 1: Get current filter state
     const filterState = getCurrentFilterState();
     if (!filterState) return;
 
     // Step 2: Determine top 3 plans
-    const topThreePlans = determineTopThreePlans(filterState);
+    let topThreePlans;
+
+    if (sortByRecommendation && useRecommendation) {
+      // Try API recommendation data (only on page load/modal submit success)
+      console.log('Attempting to use API recommendation order for plan sorting');
+      const resultsData = getResultsData();
+      const planQuotes = resultsData?.results?.PlanQuotes || [];
+      topThreePlans = getTopPlansFromRecommendation(planQuotes);
+
+      // Fallback to static if no valid recommendations found (e.g., all Recommendation values are 0)
+      if (!topThreePlans || topThreePlans.length === 0) {
+        console.log('No valid API recommendations found, falling back to static filter-based order');
+        topThreePlans = determineTopThreePlans(filterState);
+      }
+    } else {
+      // Use filter-based logic (filter changes or when recommendation disabled)
+      console.log('Using static filter-based order for plan sorting');
+      topThreePlans = determineTopThreePlans(filterState);
+    }
+
     if (!topThreePlans || topThreePlans.length === 0) {
       console.warn('Could not determine top 3 plans');
       return;
@@ -1486,7 +1526,8 @@
     console.log('Chart population complete');
 
     // Apply sorting and filtering after chart population
-    applyPlanVisibilityAndOrder();
+    // Pass true to use API recommendation order on successful API response
+    applyPlanVisibilityAndOrder(true);
   }
 
   /**
