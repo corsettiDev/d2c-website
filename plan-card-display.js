@@ -207,7 +207,7 @@
 
       // Coverage options
       PreExisting: localData.PreExisting || null,
-      PreExistingCoverage: localData.PreExistingCoverage ? Number(localData.PreExistingCoverage) : null,
+      PreExistingCoverage: localData.PreExistingCoverage || null,
 
       // Contact information (all null for this utility - no sessionStorage)
       EmailAddress: null,

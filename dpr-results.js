@@ -648,7 +648,7 @@
 
       // Coverage options (new fields in DPR system)
       PreExisting: localData.PreExisting || null,
-      PreExistingCoverage: localData.PreExistingCoverage ? Number(localData.PreExistingCoverage) : null,
+      PreExistingCoverage: localData.PreExistingCoverage || null,
 
       // Contact information
       EmailAddress: sessionData.EmailAddress || null,
