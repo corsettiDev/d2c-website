@@ -1113,6 +1113,47 @@
   }
 
   /**
+   * Get top 3 plan names from API FilterScenarios based on current filter state
+   * @param {Object} filterState - Current filter values
+   * @returns {string[]} Array of plan names in priority order, or empty array if no match
+   */
+  function getTopPlansFromApiScenarios(filterState) {
+    const resultsData = getResultsData();
+    const scenarios = resultsData?.results?.FilterScenarios?.scenarios;
+
+    if (!scenarios || !Array.isArray(scenarios)) return [];
+
+    // Map localStorage values to API criteria format
+    const coverOptionMap = { 0: 'DentalDrug', 1: 'Drug', 2: 'Dental' };
+    const coverageLevelMap = { basic: 'Basic', comprehensive: 'Comprehensive' };
+
+    const coverOption = coverOptionMap[filterState.InsuranceReason] ?? null;
+    const coverageLevel = coverageLevelMap[filterState.CoverageTier] ?? null;
+    const hasPreExisting = filterState.PreExisting === 'yes' ? 'true'
+      : filterState.PreExisting === 'no' ? 'false' : null;
+    const wantsPreExistingCoverage = filterState.PreExistingCoverage === 'yes' ? 'true'
+      : filterState.PreExistingCoverage === 'no' ? 'false' : null;
+
+    // Find matching scenario (null in criteria = wildcard)
+    const match = scenarios.find(scenario => {
+      const c = scenario.criteria;
+      return (
+        c.coverOption === coverOption &&
+        c.coverageLevel === coverageLevel &&
+        (c.hasPreExistingCondition === null || c.hasPreExistingCondition === hasPreExisting) &&
+        (c.wantsPreExistingDrugCoverage === null || c.wantsPreExistingDrugCoverage === wantsPreExistingCoverage)
+      );
+    });
+
+    if (!match) {
+      console.log('No matching API filter scenario found for:', { coverOption, coverageLevel, hasPreExisting, wantsPreExistingCoverage });
+      return [];
+    }
+
+    return match.recommendations.map(r => r.planName);
+  }
+
+  /**
    * Get current filter state from localStorage
    * @returns {Object|null} Current filter values or null if unavailable
    */
@@ -1149,7 +1190,7 @@
     let topThreePlans;
 
     if (sortByRecommendation && useRecommendation) {
-      // Try API recommendation data (only on page load/modal submit success)
+      // Page load: use Recommendation field on PlanQuotes (existing, unchanged)
       console.log('Attempting to use API recommendation order for plan sorting');
       const resultsData = getResultsData();
       const planQuotes = resultsData?.results?.PlanQuotes || [];
@@ -1160,8 +1201,17 @@
         console.log('No valid API recommendations found, falling back to static filter-based order');
         topThreePlans = determineTopThreePlans(filterState);
       }
+    } else if (sortByRecommendation) {
+      // Filter change: use API FilterScenarios if available
+      console.log('Attempting to use API filter scenarios for plan sorting');
+      topThreePlans = getTopPlansFromApiScenarios(filterState);
+
+      if (!topThreePlans || topThreePlans.length === 0) {
+        console.log('No matching API filter scenario, falling back to static filter-based order');
+        topThreePlans = determineTopThreePlans(filterState);
+      }
     } else {
-      // Use filter-based logic (filter changes or when recommendation disabled)
+      // sortByRecommendation disabled: always use static
       console.log('Using static filter-based order for plan sorting');
       topThreePlans = determineTopThreePlans(filterState);
     }
