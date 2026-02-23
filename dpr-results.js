@@ -1150,7 +1150,7 @@
       return [];
     }
 
-    return match.recommendations.map(r => r.planName);
+    return match.recommendations.map(r => r.planName.toUpperCase());
   }
 
   /**
@@ -1190,29 +1190,25 @@
     let topThreePlans;
 
     if (sortByRecommendation && useRecommendation) {
-      // Page load: use Recommendation field on PlanQuotes (existing, unchanged)
-      console.log('Attempting to use API recommendation order for plan sorting');
+      // Sort from initial API call
       const resultsData = getResultsData();
       const planQuotes = resultsData?.results?.PlanQuotes || [];
       topThreePlans = getTopPlansFromRecommendation(planQuotes);
 
-      // Fallback to static if no valid recommendations found (e.g., all Recommendation values are 0)
       if (!topThreePlans || topThreePlans.length === 0) {
-        console.log('No valid API recommendations found, falling back to static filter-based order');
+        // Sort from static
         topThreePlans = determineTopThreePlans(filterState);
       }
     } else if (sortByRecommendation) {
-      // Filter change: use API FilterScenarios if available
-      console.log('Attempting to use API filter scenarios for plan sorting');
+      // Sort from FilterScenario
       topThreePlans = getTopPlansFromApiScenarios(filterState);
 
       if (!topThreePlans || topThreePlans.length === 0) {
-        console.log('No matching API filter scenario, falling back to static filter-based order');
+        // Sort from static
         topThreePlans = determineTopThreePlans(filterState);
       }
     } else {
-      // sortByRecommendation disabled: always use static
-      console.log('Using static filter-based order for plan sorting');
+      // Sort from static
       topThreePlans = determineTopThreePlans(filterState);
     }
 
