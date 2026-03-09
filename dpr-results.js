@@ -29,7 +29,7 @@
   const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
 
   // Sort by API Recommendation field instead of filter-based logic
-  const sortByRecommendation = document.currentScript.getAttribute("data-sort-by-recommendation") === "true";
+  // const sortByRecommendation = document.currentScript.getAttribute("data-sort-by-recommendation") === "true";
 
   // ============================================================
   // STORAGE HELPER FUNCTIONS
@@ -1033,67 +1033,67 @@
    * @param {string} filterState.PreExistingCoverage - 'yes' or 'no' or null
    * @returns {string[]} Array of 3 plan names in priority order
    */
-  function determineTopThreePlans(filterState) {
-    const { InsuranceReason, CoverageTier, PreExisting, PreExistingCoverage } = filterState;
-
-    // Handle InsuranceReason == 2 (special case - PreExisting doesn't matter)
-    if (InsuranceReason == 2) {
-      if (CoverageTier == 'basic') {
-        return ['ZONE 2', 'ZONE 3', 'ZONE FUNDAMENTAL PLAN'];
-      } else if (CoverageTier == 'comprehensive') {
-        return ['ZONE 3', 'ZONE 2', 'LINK 4'];
-      }
-    }
-
-    // Handle InsuranceReason == 1
-    if (InsuranceReason == 1) {
-      if (CoverageTier == 'basic') {
-        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
-          return ['LINK 1', 'LINK 2', 'ZONE FUNDAMENTAL PLAN'];
-        } else {
-          // PreExisting == 'no' OR PreExistingCoverage == 'no'
-          return ['ZONE 4', 'LINK 1', 'LINK 2'];
-        }
-      } else if (CoverageTier == 'comprehensive') {
-        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
-          return ['LINK 1', 'LINK 4', 'LINK 3'];
-        } else {
-          // PreExisting == 'no' OR PreExistingCoverage == 'no'
-          return ['ZONE 4', 'LINK 1', 'ZONE 5'];
-        }
-      }
-    }
-
-    // Handle InsuranceReason == 0
-    if (InsuranceReason == 0) {
-      if (CoverageTier == 'basic') {
-        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
-          return ['LINK 2', 'LINK 3', 'ZONE FUNDAMENTAL PLAN'];
-        } else if (PreExisting == 'no') {
-          // User does not have pre-existing conditions
-          return ['ZONE 5', 'LINK 2', 'LINK 3'];
-        } else {
-          // PreExisting == 'yes' && PreExistingCoverage == 'no'
-          // User has pre-existing conditions but no current coverage
-          return ['ZONE 5', 'LINK 3', 'LINK 2'];
-        }
-      } else if (CoverageTier == 'comprehensive') {
-        if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
-          return ['LINK 4', 'LINK 3', 'LINK 2'];
-        } 
-        else if (PreExisting == 'no') {
-          return ['ZONE 7', 'ZONE 6', 'ZONE 5'];
-        } else {
-          // PreExisting == 'no' OR PreExistingCoverage == 'no'
-          return ['ZONE 7', 'ZONE 6', 'LINK 4'];
-        }
-      }
-    }
-
-    // Fallback - should never reach here if data is valid
-    console.warn('Unknown filter combination:', filterState);
-    return [];
-  }
+  // function determineTopThreePlans(filterState) {
+  //   const { InsuranceReason, CoverageTier, PreExisting, PreExistingCoverage } = filterState;
+  //
+  //   // Handle InsuranceReason == 2 (special case - PreExisting doesn't matter)
+  //   if (InsuranceReason == 2) {
+  //     if (CoverageTier == 'basic') {
+  //       return ['ZONE 2', 'ZONE 3', 'ZONE FUNDAMENTAL PLAN'];
+  //     } else if (CoverageTier == 'comprehensive') {
+  //       return ['ZONE 3', 'ZONE 2', 'LINK 4'];
+  //     }
+  //   }
+  //
+  //   // Handle InsuranceReason == 1
+  //   if (InsuranceReason == 1) {
+  //     if (CoverageTier == 'basic') {
+  //       if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+  //         return ['LINK 1', 'LINK 2', 'ZONE FUNDAMENTAL PLAN'];
+  //       } else {
+  //         // PreExisting == 'no' OR PreExistingCoverage == 'no'
+  //         return ['ZONE 4', 'LINK 1', 'LINK 2'];
+  //       }
+  //     } else if (CoverageTier == 'comprehensive') {
+  //       if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+  //         return ['LINK 1', 'LINK 4', 'LINK 3'];
+  //       } else {
+  //         // PreExisting == 'no' OR PreExistingCoverage == 'no'
+  //         return ['ZONE 4', 'LINK 1', 'ZONE 5'];
+  //       }
+  //     }
+  //   }
+  //
+  //   // Handle InsuranceReason == 0
+  //   if (InsuranceReason == 0) {
+  //     if (CoverageTier == 'basic') {
+  //       if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+  //         return ['LINK 2', 'LINK 3', 'ZONE FUNDAMENTAL PLAN'];
+  //       } else if (PreExisting == 'no') {
+  //         // User does not have pre-existing conditions
+  //         return ['ZONE 5', 'LINK 2', 'LINK 3'];
+  //       } else {
+  //         // PreExisting == 'yes' && PreExistingCoverage == 'no'
+  //         // User has pre-existing conditions but no current coverage
+  //         return ['ZONE 5', 'LINK 3', 'LINK 2'];
+  //       }
+  //     } else if (CoverageTier == 'comprehensive') {
+  //       if (PreExisting == 'yes' && PreExistingCoverage == 'yes') {
+  //         return ['LINK 4', 'LINK 3', 'LINK 2'];
+  //       }
+  //       else if (PreExisting == 'no') {
+  //         return ['ZONE 7', 'ZONE 6', 'ZONE 5'];
+  //       } else {
+  //         // PreExisting == 'no' OR PreExistingCoverage == 'no'
+  //         return ['ZONE 7', 'ZONE 6', 'LINK 4'];
+  //       }
+  //     }
+  //   }
+  //
+  //   // Fallback - should never reach here if data is valid
+  //   console.warn('Unknown filter combination:', filterState);
+  //   return [];
+  // }
 
   /**
    * Get top 3 plan names from API response based on Recommendation field
@@ -1179,7 +1179,7 @@
    * 1. Determines top 3 plans based on filters
    * 2. Applies visibility based on 'plans' mode (suggested vs all)
    * 3. Reorders DOM so top 3 always appear first
-   * @param {boolean} useRecommendation - If true and sortByRecommendation is enabled, use API recommendation order. Defaults to false (static filter-based order).
+   * @param {boolean} useRecommendation - If true, use API recommendation order from initial quote response. Defaults to false (API filter scenario-based order).
    */
   function applyPlanVisibilityAndOrder(useRecommendation = false) {
     // Step 1: Get current filter state
@@ -1189,27 +1189,14 @@
     // Step 2: Determine top 3 plans
     let topThreePlans;
 
-    if (sortByRecommendation && useRecommendation) {
-      // Sort from initial API call
+    if (useRecommendation) {
+      // Sort from initial API call using Recommendation field
       const resultsData = getResultsData();
       const planQuotes = resultsData?.results?.PlanQuotes || [];
       topThreePlans = getTopPlansFromRecommendation(planQuotes);
-
-      if (!topThreePlans || topThreePlans.length === 0) {
-        // Sort from static
-        topThreePlans = determineTopThreePlans(filterState);
-      }
-    } else if (sortByRecommendation) {
-      // Sort from FilterScenario
-      topThreePlans = getTopPlansFromApiScenarios(filterState);
-
-      if (!topThreePlans || topThreePlans.length === 0) {
-        // Sort from static
-        topThreePlans = determineTopThreePlans(filterState);
-      }
     } else {
-      // Sort from static
-      topThreePlans = determineTopThreePlans(filterState);
+      // Sort from FilterScenario when filters change
+      topThreePlans = getTopPlansFromApiScenarios(filterState);
     }
 
     if (!topThreePlans || topThreePlans.length === 0) {
