@@ -173,6 +173,43 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 
 ---
 
+### 2b. Results Display — Progressive Variant (dpr-results-2.js)
+
+**Purpose:** Variant of dpr-results.js supporting a two-stage disclosure flow where users can see all plans immediately with only core demographic fields, then refine with a filter form
+
+**Key Differences from dpr-results.js:**
+
+#### Lenient Validation
+- Only redirects if core fields are missing: `CoverageType`, `Age`, `Province`, `Dependents` (conditional)
+- `CoverageTier`, `InsuranceReason`, `PreExisting`, `PreExistingCoverage` are **not required** on page load
+- `hasFilterFields()` helper returns `true` only when all four filter fields have values — used to drive plan mode and button state
+
+#### Progressive Plan Display
+- When filter fields are absent: defaults to `all` mode (shows every plan)
+- When filter fields are set: defaults to `suggested` mode (top 3 recommended plans)
+- `localData.plans` value in localStorage always takes precedence over the default
+
+#### Filter Form Block (`data-form-update`)
+- `[data-dpr-plans="filterQuestions"]` — visible when filter fields are absent; contains the filter form and submit button
+- `[data-dpr-plans="viewToggle"]` — visible after filter fields are set and API has responded; contains the `plans` radio input (suggested/all)
+- `[data-form-update]` button — disabled until all four filter fields have values; on click:
+  1. Shows skeleton loaders
+  2. Resubmits API with populated filter fields
+  3. Sets `plans=suggested` in localStorage, URL, and syncs the `plans` radio input
+  4. Calls `fillChart()` + `applyPlanVisibilityAndOrder(true)` for recommended sorting
+  5. Switches visible block to `viewToggle`
+
+**Additional HTML Attributes:**
+
+- `[data-dpr-plans="filterQuestions"]` — filter form block (shown when filter fields absent)
+- `[data-dpr-plans="viewToggle"]` — toggle block (shown after filter fields set + API loaded)
+- `[data-form-update]` — submit button inside filterQuestions form
+
+**Conditional Field Requirements (core only — filter fields not required on load):**
+- `Dependents` - Required unless `CoverageType == 0` or `CoverageType == 3`
+
+---
+
 ### 3. Plan Comparison & Filtering (plan-card-display.js)
 
 **Purpose:** Standalone plan display system with intelligent filtering, comparison features, and API integration
@@ -670,6 +707,7 @@ if (customInput) {
 /
 ├── dpr-quote.js              # Stage 1: Quote form page
 ├── dpr-results.js            # Stage 2: Results display page (fully implemented)
+├── dpr-results-2.js          # Stage 2 variant: progressive disclosure (lenient validation + filter form)
 ├── plan-card-display.js      # Plan comparison and filtering utility
 ├── plan-page.js              # Individual plan page handler
 ├── attribution-tracker.js    # Marketing attribution tracking
