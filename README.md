@@ -17,6 +17,8 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 - Dual storage strategy for data persistence
 - Webflow form integration via Superform API
 - Privacy-conscious data separation
+- Multiple submit buttons supported (`[data-dpr-quote="submitBtn"]`) — all trigger save + redirect
+- View-all redirect flag via `[data-dpr-redirect="all"]` elements — clicking any one appends `?plans=view-all` to the redirect URL for that page load
 
 **Tracked Fields:**
 - `CoverageType` - Individual, family, etc.
@@ -39,6 +41,10 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 
 **Script Attributes:**
 - `data-url` - Redirect URL after form submission (results page)
+
+**HTML Attributes:**
+- `[data-dpr-quote="submitBtn"]` - Submit button(s); multiple elements supported, each triggers save + redirect
+- `[data-dpr-redirect="all"]` - Non-submit element(s); clicking any one appends `?plans=view-all` to the redirect URL (per page load only, resets on refresh)
 
 ---
 

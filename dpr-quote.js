@@ -2,6 +2,9 @@
   // Redirect URL for form submission
   const redirectUrl = document.currentScript.getAttribute("data-url") || "";
 
+  // Tracks whether the user clicked a "view all plans" element this page load
+  let viewAll = false;
+
   // Fields to track in query parameters
   const TRACKED_FIELDS = [
     'CoverageType',
@@ -258,28 +261,45 @@
    * @param {HTMLFormElement} formEl - The form element
    */
   function setupFormSubmitHandler(formEl) {
-    const submitBtn = formEl.querySelector('[data-dpr-quote="submitBtn"]');
+    const submitBtns = formEl.querySelectorAll('[data-dpr-quote="submitBtn"]');
 
-    if (!submitBtn) {
+    if (!submitBtns.length) {
       console.warn('Submit button with data-dpr-quote="submitBtn" not found');
       return;
     }
 
-    submitBtn.addEventListener('click', (e) => {
-      e.preventDefault();
+    submitBtns.forEach(submitBtn => {
+      submitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
 
-      // Save non-personal data to localStorage (persistent)
-      saveToLocalStorage(formEl);
+        // Save non-personal data to localStorage (persistent)
+        saveToLocalStorage(formEl);
 
-      // Save personal data to sessionStorage (session-only)
-      saveToSessionStorage(formEl);
+        // Save personal data to sessionStorage (session-only)
+        saveToSessionStorage(formEl);
 
-      // Redirect to the configured URL
-      if (redirectUrl) {
-        window.location.href = redirectUrl;
-      } else {
-        console.warn('No redirect URL configured');
-      }
+        // Redirect to the configured URL
+        if (redirectUrl) {
+          const finalUrl = viewAll
+            ? redirectUrl + (redirectUrl.includes('?') ? '&' : '?') + 'plans=view-all'
+            : redirectUrl;
+          window.location.href = finalUrl;
+        } else {
+          console.warn('No redirect URL configured');
+        }
+      });
+    });
+  }
+
+  /**
+   * Set up click listeners on [data-dpr-redirect="all"] elements.
+   * When any such element is clicked, the submit redirect will append plans=view-all.
+   */
+  function setupViewAllListeners() {
+    document.querySelectorAll('[data-dpr-redirect="all"]').forEach(el => {
+      el.addEventListener('click', () => {
+        viewAll = true;
+      });
     });
   }
 
@@ -309,5 +329,8 @@
 
     // Set up form submission handler
     setupFormSubmitHandler(formEl);
+
+    // Set up view-all redirect listeners
+    setupViewAllListeners();
   });
 })();
