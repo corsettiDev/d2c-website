@@ -1670,6 +1670,7 @@
         e.preventDefault();
         if (!hasFilterFields()) return;
 
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         showSkeletonLoaders();
         try {
           const result = await loadAndFetchQuotes();
