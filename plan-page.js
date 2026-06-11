@@ -106,6 +106,18 @@
   }
 
   /**
+   * Show/hide standalone Quebec-hide targets anywhere on the page.
+   * Elements with [data-quebec-hide] are hidden in Quebec and revealed
+   * (reverting to their stylesheet display) otherwise.
+   * @param {boolean} isQuebec - Whether Province is 10 (Quebec)
+   */
+  function setQuebecHideVisibility(isQuebec) {
+    document.querySelectorAll('[data-quebec-hide]').forEach(el => {
+      el.style.display = isQuebec ? 'none' : '';
+    });
+  }
+
+  /**
    * Show/hide apply button based on Quebec province
    * @param {boolean} isQuebecProvince - Whether user is in Quebec
    */
@@ -130,6 +142,9 @@
 
       quebecBtns.forEach(btn => { btn.style.display = 'none'; });
     }
+
+    // Apply standalone Quebec hide/show targets
+    setQuebecHideVisibility(isQuebecProvince);
   }
 
   // ============================================================

@@ -236,6 +236,11 @@
     const localData = getLocalStorageData();
     const isQuebec = localData?.Province == 10;
 
+    // Apply standalone Quebec hide/show targets within the cloned card
+    clonedCard.querySelectorAll('[data-quebec-hide]').forEach(el => {
+      el.style.display = isQuebec ? 'none' : '';
+    });
+
     // Find all dynamic blocks in the cloned card (or use clonedCard as single block)
     const dynamicBlocks = clonedCard.querySelectorAll('[data-results="dynamic-block"]');
     const blocksToProcess = dynamicBlocks.length > 0 ? Array.from(dynamicBlocks) : [clonedCard];

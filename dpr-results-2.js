@@ -1421,6 +1421,18 @@
   }
 
   /**
+   * Show/hide standalone Quebec-hide targets anywhere on the page.
+   * Elements with [data-quebec-hide] are hidden in Quebec and revealed
+   * (reverting to their stylesheet display) otherwise.
+   * @param {boolean} isQuebec - Whether Province is 10 (Quebec)
+   */
+  function setQuebecHideVisibility(isQuebec) {
+    document.querySelectorAll('[data-quebec-hide]').forEach(el => {
+      el.style.display = isQuebec ? 'none' : '';
+    });
+  }
+
+  /**
    * Show/hide plan buttons based on Province value
    * @param {HTMLElement} planItem - The plan container element
    * @param {boolean} isQuebec - Whether Province is 10 (Quebec)
@@ -1451,6 +1463,9 @@
     const localData = getLocalStorageData();
     const province = localData?.Province;
     const isQuebec = province == 10; // Use == to handle string/number comparison
+
+    // Apply standalone Quebec hide/show targets (independent of plan cards)
+    setQuebecHideVisibility(isQuebec);
 
     // Extract PlanQuotes from results
     const quotes = resultsData?.results?.PlanQuotes || [];
