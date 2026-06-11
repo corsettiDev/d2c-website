@@ -1311,20 +1311,18 @@
           priceEl.style.display = 'none';
         }
 
-        // Hide/reset button
-        const btn = block.querySelector('[dpr-results-apply="button"]');
-        if (btn) {
+        // Hide/reset button(s)
+        block.querySelectorAll('[dpr-results-apply="button"]').forEach(btn => {
           btn.style.display = 'none';
           btn.disabled = false;
           btn.textContent = applyButtonText;
           delete btn.dataset.confirmation;
-        }
+        });
 
-        // Hide/reset Quebec call button
-        const quebecBtn = block.querySelector('[dpr-results-quebec="call"]');
-        if (quebecBtn) {
+        // Hide/reset Quebec call button(s)
+        block.querySelectorAll('[dpr-results-quebec="call"]').forEach(quebecBtn => {
           quebecBtn.style.display = 'none';
-        }
+        });
 
         // Hide/reset hospital checkbox
         const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
@@ -1469,17 +1467,17 @@
    * @param {boolean} isQuebec - Whether Province is 10 (Quebec)
    */
   function setPlanButtonVisibility(planItem, isQuebec) {
-    const applyBtn = planItem.querySelector('[dpr-results-apply="button"]');
-    const quebecBtn = planItem.querySelector('[dpr-results-quebec="call"]');
+    const applyBtns = planItem.querySelectorAll('[dpr-results-apply="button"]');
+    const quebecBtns = planItem.querySelectorAll('[dpr-results-quebec="call"]');
 
     if (isQuebec) {
-      // Quebec: Show call button, hide apply button
-      if (quebecBtn) quebecBtn.style.display = 'block';
-      if (applyBtn) applyBtn.style.display = 'none';
+      // Quebec: Show call button(s), hide apply button(s)
+      quebecBtns.forEach(btn => { btn.style.display = 'block'; });
+      applyBtns.forEach(btn => { btn.style.display = 'none'; });
     } else {
-      // Other provinces: Show apply button, hide call button
-      if (applyBtn) applyBtn.style.display = 'flex';
-      if (quebecBtn) quebecBtn.style.display = 'none';
+      // Other provinces: Show apply button(s), hide call button(s)
+      applyBtns.forEach(btn => { btn.style.display = 'flex'; });
+      quebecBtns.forEach(btn => { btn.style.display = 'none'; });
     }
   }
 
@@ -1573,9 +1571,9 @@
           checkboxWrapper.style.display = 'none';
         }
 
-        // Wire up Apply Now button
-        const btn = block.querySelector('[dpr-results-apply="button"]');
-        if (btn) {
+        // Wire up Apply Now button(s)
+        const btns = block.querySelectorAll('[dpr-results-apply="button"]');
+        btns.forEach(btn => {
           // Clone and replace to remove existing listeners
           const newBtn = btn.cloneNode(true);
           btn.parentNode.replaceChild(newBtn, btn);
@@ -1605,7 +1603,7 @@
               newBtn.disabled = false;
             }
           });
-        }
+        });
 
         // Set button visibility based on Province
         setPlanButtonVisibility(block, isQuebec);

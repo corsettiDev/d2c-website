@@ -110,26 +110,25 @@
    * @param {boolean} isQuebecProvince - Whether user is in Quebec
    */
   function setPlanButtonVisibility(isQuebecProvince) {
-    const applyBtnWrapper = document.querySelector('[data-plan-page="applyBtnWrapper"]');
-    const applyBtn = document.querySelector('[data-plan-page="applyBtn"]');
+    const applyBtnWrappers = document.querySelectorAll('[data-plan-page="applyBtnWrapper"]');
+    const applyBtns = document.querySelectorAll('[data-plan-page="applyBtn"]');
+    const quebecBtns = document.querySelectorAll('[data-plan-page="quebecCall"]');
 
     if (isQuebecProvince) {
-      // Quebec: hide apply button
-      if (applyBtnWrapper) applyBtnWrapper.style.display = 'none';
-      if (applyBtn) applyBtn.style.display = 'none';
+      // Quebec: hide apply button(s)
+      applyBtnWrappers.forEach(wrapper => { wrapper.style.display = 'none'; });
+      applyBtns.forEach(btn => { btn.style.display = 'none'; });
 
-      // Show Quebec call button if HTML element exists
-      const quebecBtn = document.querySelector('[data-plan-page="quebecCall"]');
-      if (quebecBtn) quebecBtn.style.display = 'block';
+      // Show Quebec call button(s) if HTML element exists
+      quebecBtns.forEach(btn => { btn.style.display = 'block'; });
 
       console.log('Quebec province detected - hiding apply button');
     } else {
-      // Other provinces: show apply button
-      if (applyBtnWrapper) applyBtnWrapper.classList.remove('hide');
-      if (applyBtn) applyBtn.style.display = 'flex';
+      // Other provinces: show apply button(s)
+      applyBtnWrappers.forEach(wrapper => { wrapper.classList.remove('hide'); });
+      applyBtns.forEach(btn => { btn.style.display = 'flex'; });
 
-      const quebecBtn = document.querySelector('[data-plan-page="quebecCall"]');
-      if (quebecBtn) quebecBtn.style.display = 'none';
+      quebecBtns.forEach(btn => { btn.style.display = 'none'; });
     }
   }
 
@@ -207,45 +206,47 @@
    * @param {string} confirmationNumber - Quote confirmation number
    */
   function setupApplyButton(confirmationNumber) {
-    const applyBtn = document.querySelector('[data-plan-page="applyBtn"]');
-    if (!applyBtn) {
+    const applyBtns = document.querySelectorAll('[data-plan-page="applyBtn"]');
+    if (applyBtns.length === 0) {
       console.warn("Apply button not found");
       return;
     }
 
-    // Clone button to remove existing event listeners
-    const newBtn = applyBtn.cloneNode(true);
-    applyBtn.parentNode.replaceChild(newBtn, applyBtn);
+    applyBtns.forEach(applyBtn => {
+      // Clone button to remove existing event listeners
+      const newBtn = applyBtn.cloneNode(true);
+      applyBtn.parentNode.replaceChild(newBtn, applyBtn);
 
-    // Store confirmation number
-    newBtn.dataset.confirmation = confirmationNumber;
+      // Store confirmation number
+      newBtn.dataset.confirmation = confirmationNumber;
 
-    // Add click handler
-    newBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
+      // Add click handler
+      newBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
 
-      const originalText = newBtn.textContent;
-      newBtn.disabled = true;
-      newBtn.textContent = "Loading...";
+        const originalText = newBtn.textContent;
+        newBtn.disabled = true;
+        newBtn.textContent = "Loading...";
 
-      try {
-        const url = await getApplicationUrl(confirmationNumber);
-        const finalUrl = decorateWithGtmAutoLinker(url);
+        try {
+          const url = await getApplicationUrl(confirmationNumber);
+          const finalUrl = decorateWithGtmAutoLinker(url);
 
-        // Short delay for GA hit to flush
-        setTimeout(() => {
-          window.location.assign(finalUrl);
-        }, 200);
-      } catch (error) {
-        console.error("Error getting application URL:", error);
-        newBtn.textContent = "Error – Try Again";
-        newBtn.disabled = false;
+          // Short delay for GA hit to flush
+          setTimeout(() => {
+            window.location.assign(finalUrl);
+          }, 200);
+        } catch (error) {
+          console.error("Error getting application URL:", error);
+          newBtn.textContent = "Error – Try Again";
+          newBtn.disabled = false;
 
-        // Reset button text after a delay
-        setTimeout(() => {
-          newBtn.textContent = originalText;
-        }, 3000);
-      }
+          // Reset button text after a delay
+          setTimeout(() => {
+            newBtn.textContent = originalText;
+          }, 3000);
+        }
+      });
     });
   }
 

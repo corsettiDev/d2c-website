@@ -209,17 +209,17 @@
    * @param {boolean} isQuebec - Whether Province is 10 (Quebec)
    */
   function setPlanButtonVisibility(planItem, isQuebec) {
-    const applyBtn = planItem.querySelector('[dpr-results-apply="button"]');
-    const quebecBtn = planItem.querySelector('[dpr-results-quebec="call"]');
+    const applyBtns = planItem.querySelectorAll('[dpr-results-apply="button"]');
+    const quebecBtns = planItem.querySelectorAll('[dpr-results-quebec="call"]');
 
     if (isQuebec) {
-      // Quebec: Show call button, hide apply button
-      if (quebecBtn) quebecBtn.style.display = 'block';
-      if (applyBtn) applyBtn.style.display = 'none';
+      // Quebec: Show call button(s), hide apply button(s)
+      quebecBtns.forEach(btn => { btn.style.display = 'block'; });
+      applyBtns.forEach(btn => { btn.style.display = 'none'; });
     } else {
-      // Other provinces: Show apply button, hide call button
-      if (applyBtn) applyBtn.style.display = 'flex';
-      if (quebecBtn) quebecBtn.style.display = 'none';
+      // Other provinces: Show apply button(s), hide call button(s)
+      applyBtns.forEach(btn => { btn.style.display = 'flex'; });
+      quebecBtns.forEach(btn => { btn.style.display = 'none'; });
     }
   }
 
@@ -242,11 +242,12 @@
 
     // Process each dynamic block independently
     blocksToProcess.forEach(block => {
-      // Re-wire Apply button for this block
-      const applyBtn = block.querySelector('[dpr-results-apply="button"]');
-      if (applyBtn && applyBtn.dataset.confirmation) {
-        attachApplyButtonHandler(applyBtn, applyBtn.dataset.confirmation);
-      }
+      // Re-wire Apply button(s) for this block
+      block.querySelectorAll('[dpr-results-apply="button"]').forEach(applyBtn => {
+        if (applyBtn.dataset.confirmation) {
+          attachApplyButtonHandler(applyBtn, applyBtn.dataset.confirmation);
+        }
+      });
 
       // Re-wire hospital checkbox for this block
       const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
