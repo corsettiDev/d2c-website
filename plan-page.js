@@ -14,6 +14,13 @@
   const hospitalAccommodationText = document.currentScript.getAttribute("data-hospital-text") ||
     "Add optional hospital accommodation for $";
 
+  // Localized button state text (French on fr-ca pages)
+  function isFrenchPage() {
+    return (document.documentElement.lang || "").toLowerCase() === "fr-ca";
+  }
+  function loadingText() { return isFrenchPage() ? "Chargement..." : "Loading..."; }
+  function errorRetryText() { return isFrenchPage() ? "Erreur – Réessayer" : "Error – Try Again"; }
+
   // ============================================================
   // STORAGE HELPER FUNCTIONS
   // ============================================================
@@ -241,7 +248,7 @@
 
         const originalText = newBtn.textContent;
         newBtn.disabled = true;
-        newBtn.textContent = "Loading...";
+        newBtn.textContent = loadingText();
 
         try {
           const url = await getApplicationUrl(confirmationNumber);
@@ -253,7 +260,7 @@
           }, 200);
         } catch (error) {
           console.error("Error getting application URL:", error);
-          newBtn.textContent = "Error – Try Again";
+          newBtn.textContent = errorRetryText();
           newBtn.disabled = false;
 
           // Reset button text after a delay

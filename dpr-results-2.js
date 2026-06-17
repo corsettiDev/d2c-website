@@ -28,6 +28,13 @@
   // Apply button text
   const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
 
+  // Localized button state text (French on fr-ca pages)
+  function isFrenchPage() {
+    return (document.documentElement.lang || "").toLowerCase() === "fr-ca";
+  }
+  function loadingText() { return isFrenchPage() ? "Chargement..." : "Loading..."; }
+  function errorRetryText() { return isFrenchPage() ? "Erreur – Réessayer" : "Error – Try Again"; }
+
   // Sort by API Recommendation field instead of filter-based logic
   // const sortByRecommendation = document.currentScript.getAttribute("data-sort-by-recommendation") === "true";
 
@@ -975,7 +982,7 @@
     const originalText = button.textContent;
 
     // Step 2: Update button to loading state
-    button.textContent = 'Loading...';
+    button.textContent = loadingText();
     button.disabled = true;
 
     // Step 3: Call API
@@ -1560,7 +1567,7 @@
 
             const originalText = newBtn.textContent;
             newBtn.disabled = true;
-            newBtn.textContent = 'Loading...';
+            newBtn.textContent = loadingText();
 
             try {
               const url = await getApplicationUrl(newBtn.dataset.confirmation);
@@ -1572,7 +1579,7 @@
               }, 200);
             } catch (err) {
               console.error('Error getting application URL:', err);
-              newBtn.textContent = 'Error – Try Again';
+              newBtn.textContent = errorRetryText();
               newBtn.disabled = false;
             }
           });

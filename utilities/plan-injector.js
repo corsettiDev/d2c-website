@@ -35,6 +35,13 @@
   // Root API URL
   const rootApiURL = document.currentScript?.getAttribute("data-api-url") || "https://qagsd2cins.greenshield.ca";
 
+  // Localized button state text (French on fr-ca pages)
+  function isFrenchPage() {
+    return (document.documentElement.lang || "").toLowerCase() === "fr-ca";
+  }
+  function loadingText() { return isFrenchPage() ? "Chargement..." : "Loading..."; }
+  function errorRetryText() { return isFrenchPage() ? "Erreur – Réessayer" : "Error – Try Again"; }
+
   // ============================================================
   // STORAGE HELPER FUNCTIONS
   // ============================================================
@@ -142,7 +149,7 @@
 
       const originalText = newBtn.textContent;
       newBtn.disabled = true;
-      newBtn.textContent = 'Loading...';
+      newBtn.textContent = loadingText();
 
       try {
         const url = await getApplicationUrl(confirmationNumber);
@@ -154,7 +161,7 @@
         }, 200);
       } catch (err) {
         console.error('[plan-injector] Error getting application URL:', err);
-        newBtn.textContent = 'Error – Try Again';
+        newBtn.textContent = errorRetryText();
         newBtn.disabled = false;
       }
     });
