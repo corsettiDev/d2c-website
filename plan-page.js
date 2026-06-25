@@ -159,6 +159,34 @@
   // ============================================================
 
   /**
+   * Update a quote's options (e.g. Hospital Accommodation) via PUT.
+   * Returns the new ConfirmationNumber for the updated quote.
+   * @param {string} confirmationNumber - The base quote confirmation number
+   * @param {string} optionName - The option to toggle (e.g. 'Hospital Accommodation')
+   * @param {boolean} selected - Whether the option should be selected
+   * @returns {Promise<string>} New ConfirmationNumber for the updated quote
+   */
+  async function updateQuoteOption(confirmationNumber, optionName, selected) {
+    const res = await fetch(`${rootApiURL}/quote/${confirmationNumber}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([{ OptionName: optionName, Selected: selected }])
+    });
+
+    if (!res.ok) {
+      throw new Error(`Quote update failed: ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    if (!data.ConfirmationNumber) {
+      throw new Error('No ConfirmationNumber in quote update response');
+    }
+
+    return data.ConfirmationNumber;
+  }
+
+  /**
    * Fetch application URL from API using confirmation number
    * @param {string} confirmationNumber - The quote confirmation number
    * @returns {Promise<string>} Application URL
@@ -251,7 +279,25 @@
         newBtn.textContent = loadingText();
 
         try {
-          const url = await getApplicationUrl(confirmationNumber);
+          // If hospital accommodation is checked, swap in the updated
+          // quote's confirmation number (cached after the first PUT).
+          let confirmationToUse = confirmationNumber;
+          const hospitalCheckbox = document.querySelector('[data-plan-page="hospitalToggle"]');
+
+          if (hospitalCheckbox && hospitalCheckbox.checked) {
+            if (newBtn.dataset.hospitalConfirmation) {
+              confirmationToUse = newBtn.dataset.hospitalConfirmation;
+            } else {
+              confirmationToUse = await updateQuoteOption(
+                confirmationNumber,
+                'Hospital Accommodation',
+                true
+              );
+              newBtn.dataset.hospitalConfirmation = confirmationToUse;
+            }
+          }
+
+          const url = await getApplicationUrl(confirmationToUse);
           const finalUrl = decorateWithGtmAutoLinker(url);
 
           // Short delay for GA hit to flush
