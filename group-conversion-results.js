@@ -5,8 +5,9 @@
   // Variant of dpr-results.js for the GS+ transition flow.
   // GS+ opens this page with the standard quote params PLUS an
   // encrypted member ID (`hashedPlanMemberID`). We never read that
-  // ID — we capture it on load and pass it through to the
-  // application URL on Apply Now, renamed to `hashedPMID`.
+  // ID — we capture it on load and send it as a `hashedPMID` query
+  // param on the /applicationUrl API call on Apply Now, where the
+  // proxy forwards it to the upstream ApplicationUrl API.
   // Everything else matches dpr-results.js.
   // ============================================================
 
@@ -1384,10 +1385,23 @@
     // Build base URL
     let apiUrl = `${rootApiURL}/applicationUrl/${confirmationNumber}`;
 
+    const params = new URLSearchParams();
+
     // Append lang parameter if page is French Canadian
     const htmlLang = document.documentElement.lang;
     if (htmlLang && htmlLang.toLowerCase() === 'fr-ca') {
-      apiUrl += '?lang=fr';
+      params.set('lang', 'fr');
+    }
+
+    // Pass the encrypted GS+ member ID through to the upstream
+    // ApplicationUrl API so it's baked into the generated URL
+    if (hashedPlanMemberID) {
+      params.set('hashedPMID', hashedPlanMemberID);
+    }
+
+    const queryString = params.toString();
+    if (queryString) {
+      apiUrl += `?${queryString}`;
     }
 
     const res = await fetch(apiUrl);
@@ -1431,25 +1445,6 @@
       try { sessionStorage.setItem('dpr_hashed_pmid', fromUrl); } catch (e) {}
     } else {
       try { hashedPlanMemberID = sessionStorage.getItem('dpr_hashed_pmid'); } catch (e) {}
-    }
-  }
-
-  /**
-   * Append the encrypted member ID to the application URL as `hashedPMID`.
-   * Uses the URL API so it works whether or not the URL already has a query
-   * string. No-op when no ID was captured.
-   * @param {string} url - The application URL
-   * @returns {string} URL with hashedPMID appended, or the original on failure
-   */
-  function appendHashedPmid(url) {
-    if (!hashedPlanMemberID) return url;
-    try {
-      const u = new URL(url);
-      u.searchParams.set('hashedPMID', hashedPlanMemberID);
-      return u.toString();
-    } catch (e) {
-      console.warn('Failed to append hashedPMID, using raw URL', e);
-      return url;
     }
   }
 
@@ -1658,8 +1653,7 @@
               }
 
               const url = await getApplicationUrl(confirmationToUse);
-              const withPmid = appendHashedPmid(url);
-              const finalUrl = decorateWithGtmAutoLinker(withPmid);
+              const finalUrl = decorateWithGtmAutoLinker(url);
 
               // Short delay for GA hit to flush
               setTimeout(() => {
