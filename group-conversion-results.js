@@ -3,11 +3,20 @@
   // GROUP CONVERSION RESULTS
   // ------------------------------------------------------------
   // Variant of dpr-results.js for the GS+ transition flow.
-  // GS+ opens this page with the standard quote params PLUS an
-  // encrypted member ID (`hashedPlanMemberID`). We never read that
-  // ID — we capture it on load and send it as a `hashedPMID` query
-  // param on the /applicationUrl API call on Apply Now, where the
-  // proxy forwards it to the upstream ApplicationUrl API.
+  // GS+ opens this page with the full quote param set (a "Null"
+  // sentinel marks values it doesn't have) PLUS an encrypted member
+  // ID (`hashedPlanMemberID`) and the member's `firstName`.
+  // - The encrypted ID is never read — captured on load and sent as
+  //   a `hashedPMID` query param on the /applicationUrl API call on
+  //   Apply Now, where the proxy forwards it upstream.
+  // - firstName personalizes [data-gc-first-name] spans (display
+  //   only — never enters the payload or form fields).
+  // - Both are persisted to sessionStorage and stripped from the
+  //   address bar on load, along with any Null-sentinel params.
+  // - A fresh GS+ entry is authoritative: stored quote fields are
+  //   reset to the non-Null params, so a missing field redirects to
+  //   the quote form (carrying the real params for prefill) instead
+  //   of being filled by stale data from a previous visit.
   // Everything else matches dpr-results.js.
   // ============================================================
 
@@ -20,6 +29,28 @@
 
   // Encrypted GS+ member ID passed through to the application URL (hashedPMID)
   let hashedPlanMemberID = null;
+
+  // Whether the encrypted member ID arrived on the URL this page load
+  // (marks a fresh GS+ entry — GS+ params are then authoritative)
+  let hashedPmidFromUrl = false;
+
+  // Member first name passed by GS+ for the "Good News, {name}!" heading
+  let gsFirstName = null;
+
+  // URL params as they were on page load, before stripping/rebuilding
+  let initialUrlParams = {};
+
+  // The eight quote fields GS+ sends (with a "Null" sentinel for values it lacks)
+  const TRACKED_QUOTE_FIELDS = [
+    'CoverageType',
+    'Dependents',
+    'Age',
+    'Province',
+    'CoverageTier',
+    'InsuranceReason',
+    'PreExisting',
+    'PreExistingCoverage'
+  ];
 
   // Flag to prevent infinite loop when syncing fields
   let isSyncing = false;
@@ -247,6 +278,64 @@
   }
 
   /**
+   * Check if a value is the GS+ "no data" sentinel or otherwise empty.
+   * GS+ sends the full param set with "Null" for values it doesn't
+   * have; the exact casing is unconfirmed, so match case-insensitively.
+   * @param {*} value - The value to check
+   * @returns {boolean} True if the value carries no real data
+   */
+  function isNullSentinel(value) {
+    return value === null || value === undefined || value === '' ||
+      String(value).trim().toLowerCase() === 'null';
+  }
+
+  /**
+   * Find a param value by case-insensitive key match.
+   * GS+ specs disagree on param casing (hashedPlanMemberID vs
+   * hashedPlanMemberId, CoverageType vs coverageTier), so all GS+
+   * param lookups go through here.
+   * @param {Object} params - Parsed query params
+   * @param {string} name - Canonical param name
+   * @returns {string|null} The param value or null
+   */
+  function findParamCaseInsensitive(params, name) {
+    const key = Object.keys(params).find(
+      k => k.toLowerCase() === name.toLowerCase()
+    );
+    return key !== undefined ? params[key] : null;
+  }
+
+  /**
+   * Clean the address bar after the GS+ params are captured: drop the
+   * private params (firstName, hashedPlanMemberID — any casing) and any
+   * param carrying the Null sentinel, and normalize tracked quote field
+   * keys to their canonical casing.
+   */
+  function stripAndNormalizeUrlParams() {
+    const url = new URL(window.location.href);
+    let changed = false;
+
+    Array.from(url.searchParams.keys()).forEach(key => {
+      const lower = key.toLowerCase();
+      const value = url.searchParams.get(key);
+      const canonical = TRACKED_QUOTE_FIELDS.find(f => f.toLowerCase() === lower);
+
+      if (lower === 'hashedplanmemberid' || lower === 'firstname' || isNullSentinel(value)) {
+        url.searchParams.delete(key);
+        changed = true;
+      } else if (canonical && canonical !== key) {
+        url.searchParams.delete(key);
+        url.searchParams.set(canonical, value);
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      window.history.replaceState({}, '', url.toString());
+    }
+  }
+
+  /**
    * Rebuild URL params from current localStorage state
    * Excludes sessionStorage-only fields
    */
@@ -400,8 +489,12 @@
       let sourceStorage = null; // 'local' or 'session'
 
       // Priority 1: URL params (update localStorage)
-      if (urlParams[fieldName]) {
-        valueToUse = urlParams[fieldName];
+      // GS+ sends a "Null" sentinel for values it doesn't have — a
+      // stripped Null falls through to lower-priority sources instead
+      // of reaching form fields, localStorage, or the API payload
+      const urlValue = findParamCaseInsensitive(urlParams, fieldName);
+      if (urlValue && !isNullSentinel(urlValue)) {
+        valueToUse = urlValue;
         updateLocalStorage(fieldName, valueToUse);
         sourceStorage = 'local';
       }
@@ -430,6 +523,31 @@
     if (Object.keys(urlParams).length === 0) {
       // Only update URL if there were no initial URL params
       syncAllParamsFromStorage();
+    }
+  }
+
+  /**
+   * A fresh GS+ entry (hashedPlanMemberID on the URL) is authoritative:
+   * clear the tracked quote fields from localStorage so stale answers
+   * from a previous visit never fill gaps left by stripped Null params.
+   * Non-Null GS+ params repopulate via prefillAllForms; truly missing
+   * fields then fail validation and redirect to the quote form.
+   */
+  function resetQuoteFieldsForGsEntry() {
+    if (!hashedPmidFromUrl) return;
+
+    try {
+      const data = getLocalStorageData();
+      if (!data) return;
+
+      TRACKED_QUOTE_FIELDS.forEach(field => {
+        delete data[field];
+      });
+
+      localStorage.setItem('dpr_local_data', JSON.stringify(data));
+      console.log('GS+ entry detected - reset tracked quote fields in localStorage');
+    } catch (e) {
+      console.warn('Failed to reset quote fields for GS+ entry:', e);
     }
   }
 
@@ -919,6 +1037,31 @@
   }
 
   /**
+   * Build the missing-fields redirect URL, carrying any real (non-Null)
+   * tracked quote params received on load so the quote form prefills
+   * them and the member only fills the gaps. firstName and the hashed
+   * member ID travel via sessionStorage instead — never on the URL.
+   * @returns {string} Redirect URL with carried quote params
+   */
+  function buildQuoteRedirectUrl() {
+    try {
+      const url = new URL(redirectUrl, window.location.href);
+
+      TRACKED_QUOTE_FIELDS.forEach(field => {
+        const value = findParamCaseInsensitive(initialUrlParams, field);
+        if (value && !isNullSentinel(value)) {
+          url.searchParams.set(field, value);
+        }
+      });
+
+      return url.toString();
+    } catch (e) {
+      console.warn('Failed to build redirect URL with quote params:', e);
+      return redirectUrl;
+    }
+  }
+
+  /**
    * Handle API call on page load with skeleton loaders
    * Called automatically during initialization
    */
@@ -929,7 +1072,7 @@
     if (!validateRequiredFields()) {
       console.error('Missing required fields - redirecting to quote form');
       if (redirectUrl) {
-        window.location.href = redirectUrl;
+        window.location.href = buildQuoteRedirectUrl();
       } else {
         console.warn('No redirect URL configured - cannot redirect');
       }
@@ -1428,24 +1571,49 @@
 
   /**
    * Capture the encrypted GS+ member ID from the URL on page load.
-   * Persists to sessionStorage so it survives a reload (the URL param is
-   * stripped once a form field changes and the query string is rebuilt
-   * from localStorage). Not a form field, so it never reaches the payload.
+   * Persists to sessionStorage so it survives the URL strip and page
+   * reloads. Not a form field, so it never reaches the payload.
    * The param name match is case-insensitive, so any casing of the trailing
    * "ID"/"Id" is accepted.
    */
   function captureHashedPlanMemberID() {
-    const params = getQueryParams();
-    const key = Object.keys(params).find(
-      k => k.toLowerCase() === 'hashedplanmemberid'
-    );
-    const fromUrl = key ? params[key] : null;
-    if (fromUrl) {
+    const fromUrl = findParamCaseInsensitive(initialUrlParams, 'hashedPlanMemberID');
+    if (fromUrl && !isNullSentinel(fromUrl)) {
       hashedPlanMemberID = fromUrl;
+      hashedPmidFromUrl = true;
       try { sessionStorage.setItem('dpr_hashed_pmid', fromUrl); } catch (e) {}
     } else {
       try { hashedPlanMemberID = sessionStorage.getItem('dpr_hashed_pmid'); } catch (e) {}
     }
+  }
+
+  /**
+   * Capture the member first name GS+ appends (`firstName=Jane`).
+   * Same treatment as the hashed member ID: persisted to sessionStorage
+   * (survives the URL strip and reloads) with a sessionStorage fallback
+   * when the param is absent. Display-only — never enters the API
+   * payload or form fields.
+   */
+  function captureFirstName() {
+    const fromUrl = findParamCaseInsensitive(initialUrlParams, 'firstName');
+    if (fromUrl && !isNullSentinel(fromUrl)) {
+      gsFirstName = fromUrl;
+      try { sessionStorage.setItem('dpr_gc_first_name', fromUrl); } catch (e) {}
+    } else {
+      try { gsFirstName = sessionStorage.getItem('dpr_gc_first_name'); } catch (e) {}
+    }
+  }
+
+  /**
+   * Personalize [data-gc-first-name] spans. The span carries the comma
+   * and space — headings are authored as
+   * `Good News<span data-gc-first-name></span>!` and render
+   * "Good News, Jane!" or plain "Good News!" when no name is available.
+   */
+  function fillFirstNameSpans() {
+    document.querySelectorAll('[data-gc-first-name]').forEach(el => {
+      el.textContent = gsFirstName ? `, ${gsFirstName}` : '';
+    });
   }
 
   /**
@@ -1726,8 +1894,15 @@
   function initialize() {
     console.log('Group Conversion Results: Initializing...');
 
-    // Capture the encrypted GS+ member ID before forms strip the URL param
+    // Snapshot URL params, capture the GS+ params, then clean the URL
+    initialUrlParams = getQueryParams();
     captureHashedPlanMemberID();
+    captureFirstName();
+    stripAndNormalizeUrlParams();
+    fillFirstNameSpans();
+
+    // A fresh GS+ entry overrides any stale stored quote data
+    resetQuoteFieldsForGsEntry();
 
     // Initialize value management system
     prefillAllForms();

@@ -7,6 +7,9 @@ window.Webflow.push(() => {
     select.dataset._sfAutoNextBound = "true";
 
     select.addEventListener("change", () => {
+      // Skip programmatic changes fired during form prefill
+      // (group-conversion-quote.js sets this flag while hydrating)
+      if (window._sfSuppressAutoNext) return;
       if (!select.value.trim()) return;
 
       // Find the Superform instance
