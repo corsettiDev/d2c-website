@@ -13,12 +13,17 @@
    *  USAGE:
    *    - data-prod="https://example.com/prod.js"     (required)
    *    - data-staging="http://localhost:8080/dev.js" (optional)
+   *    - data-<name>-staging="..."                    (optional)
    *    - async / defer                                (optional)
    *
    *  LOGIC:
    *    - If on *.webflow.io → loads staging (if provided)
    *    - Otherwise → loads production
    *    - If staging URL is missing → falls back to production
+   *    - On *.webflow.io, any data-<name>-staging attribute
+   *      overrides data-<name> on the injected script
+   *      (e.g. data-api-url-staging overrides data-api-url).
+   *      Ignored on production domains.
    *
    * ------------------------------------------------------------
    */
@@ -74,6 +79,23 @@
   const isStaging = hostname.includes("webflow.io");
 
   script.src = isStaging ? stagingSrc : productionSrc;
+
+  /*
+   * ------------------------------------------------------------
+   *  Staging attribute overrides
+   *  On staging hosts, data-<name>-staging overrides data-<name>.
+   *  The regex requires a name between "data-" and "-staging",
+   *  so the reserved data-staging attribute is never matched.
+   * ------------------------------------------------------------
+   */
+  if (isStaging) {
+    Array.from(parent.attributes).forEach((attr) => {
+      const match = attr.name.match(/^data-(.+)-staging$/);
+      if (match) {
+        script.setAttribute(`data-${match[1]}`, attr.value);
+      }
+    });
+  }
 
   /*
    * ------------------------------------------------------------
