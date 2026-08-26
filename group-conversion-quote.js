@@ -117,7 +117,7 @@
   // Longest name the greeting will render. Anything longer (bad data,
   // junk in the param) is cut so it can't blow the heading out of its
   // container.
-  const FIRST_NAME_MAX_LENGTH = 40;
+  const FIRST_NAME_MAX_LENGTH = 20;
 
   /**
    * Trim and cap a first name for display.
