@@ -85,8 +85,9 @@
    * @returns {boolean} True if the value carries no real data
    */
   function isNullSentinel(value) {
-    return value === null || value === undefined || value === '' ||
-      String(value).trim().toLowerCase() === 'null';
+    if (value === null || value === undefined) return true;
+    const s = String(value).trim().toLowerCase();
+    return s === '' || s === 'null';
   }
 
   /**
@@ -113,6 +114,25 @@
    * sessionStorage via its existing fallbacks — they never travel on
    * the URL. firstName is display-only and never enters form fields.
    */
+  // Longest name the greeting will render. Anything longer (bad data,
+  // junk in the param) is cut so it can't blow the heading out of its
+  // container.
+  const FIRST_NAME_MAX_LENGTH = 40;
+
+  /**
+   * Trim and cap a first name for display.
+   * @param {string|null} name - Raw name value
+   * @returns {string|null} Cleaned name, or null when empty
+   */
+  function sanitizeFirstName(name) {
+    if (!name) return null;
+    const trimmed = String(name).trim();
+    if (!trimmed) return null;
+    return trimmed.length > FIRST_NAME_MAX_LENGTH
+      ? trimmed.slice(0, FIRST_NAME_MAX_LENGTH).trimEnd() + '\u2026'
+      : trimmed;
+  }
+
   function captureGsPlusParams() {
     const params = getQueryParams();
 
@@ -123,10 +143,10 @@
 
     const firstName = findParamCaseInsensitive(params, 'firstName');
     if (firstName && !isNullSentinel(firstName)) {
-      gsFirstName = firstName;
-      try { sessionStorage.setItem('dpr_gc_first_name', firstName); } catch (e) {}
+      gsFirstName = sanitizeFirstName(firstName);
+      try { sessionStorage.setItem('dpr_gc_first_name', gsFirstName); } catch (e) {}
     } else {
-      try { gsFirstName = sessionStorage.getItem('dpr_gc_first_name'); } catch (e) {}
+      try { gsFirstName = sanitizeFirstName(sessionStorage.getItem('dpr_gc_first_name')); } catch (e) {}
     }
   }
 
