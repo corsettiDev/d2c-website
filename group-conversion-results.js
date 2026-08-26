@@ -183,7 +183,37 @@
    * @returns {boolean} True if value is missing, false otherwise
    */
   function isFieldMissing(value) {
-    return value == null || value === '';
+    return value == null || String(value).trim() === '';
+  }
+
+  // Legal values per the GC quote URL spec (§5). A present-but-invalid
+  // value (e.g. Province=13, CoverageType=9) would sail through a
+  // presence check, get rejected by the quote API, and dead-end the
+  // member on an error banner. Treat it like a missing value instead so
+  // the member falls back to the quote form (spec §7) and can answer.
+  const VALID_FIELD_VALUES = {
+    CoverageType: ['0', '1', '2', '3'],
+    Dependents: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+    Age: ['18', '45', '55', '60', '65'],
+    Province: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+    CoverageTier: ['basic', 'comprehensive'],
+    InsuranceReason: ['0', '1', '2'],
+    PreExisting: ['yes', 'no'],
+    PreExistingCoverage: ['yes', 'no']
+  };
+
+  /**
+   * Check if a present value is outside the legal set for its field.
+   * Missing values are not "invalid" — presence is checked separately.
+   * @param {string} fieldName - Canonical field name
+   * @param {*} value - The value to check
+   * @returns {boolean} True if present but not a legal value
+   */
+  function isFieldInvalid(fieldName, value) {
+    if (isFieldMissing(value)) return false;
+    const legal = VALID_FIELD_VALUES[fieldName];
+    if (!legal) return false;
+    return !legal.includes(String(value).trim().toLowerCase());
   }
 
   /**
@@ -197,6 +227,16 @@
     if (!localData) {
       console.warn('No localStorage data found');
       return false;
+    }
+
+    // Any tracked field that is present but carries an illegal value
+    // fails validation, so the member lands on the form instead of an
+    // API error dead-end (spec §7 failure behaviour).
+    for (const field of Object.keys(VALID_FIELD_VALUES)) {
+      if (isFieldInvalid(field, localData[field])) {
+        console.warn(`Field has invalid value: ${field} = "${localData[field]}"`);
+        return false;
+      }
     }
 
     // Always required fields
@@ -281,12 +321,14 @@
    * Check if a value is the GS+ "no data" sentinel or otherwise empty.
    * GS+ sends the full param set with "Null" for values it doesn't
    * have; the exact casing is unconfirmed, so match case-insensitively.
+   * Whitespace-only values (e.g. `Age=%20`) carry no data either.
    * @param {*} value - The value to check
    * @returns {boolean} True if the value carries no real data
    */
   function isNullSentinel(value) {
-    return value === null || value === undefined || value === '' ||
-      String(value).trim().toLowerCase() === 'null';
+    if (value === null || value === undefined) return true;
+    const s = String(value).trim().toLowerCase();
+    return s === '' || s === 'null';
   }
 
   /**
@@ -1365,6 +1407,24 @@
     }
 
     if (!topThreePlans || topThreePlans.length === 0) {
+      // No scenario match (e.g. PreExisting answered but the follow-up
+      // not yet) — fall back to the API recommendation order so the
+      // suggested/all toggle and reordering still work instead of the
+      // whole routine silently bailing out.
+      const resultsData = getResultsData();
+      topThreePlans = getTopPlansFromRecommendation(resultsData?.results?.PlanQuotes || []);
+      if (topThreePlans.length === 0) {
+        // Last resort: keep whichever cards are currently visible as
+        // the "top" set so a view-all/suggested toggle still applies.
+        topThreePlans = Array.from(document.querySelectorAll('[dpr-results-plan]'))
+          .filter(el => el.style.display !== 'none')
+          .slice(0, 3)
+          .map(el => el.getAttribute('dpr-results-plan'));
+      }
+      console.warn('No filter scenario match - falling back to:', topThreePlans);
+    }
+
+    if (!topThreePlans || topThreePlans.length === 0) {
       console.warn('Could not determine top 3 plans');
       return;
     }
@@ -1594,13 +1654,32 @@
    * when the param is absent. Display-only — never enters the API
    * payload or form fields.
    */
+  // Longest name the greeting will render. Anything longer (bad data,
+  // junk in the param) is cut so it can't blow the heading out of its
+  // container.
+  const FIRST_NAME_MAX_LENGTH = 40;
+
+  /**
+   * Trim and cap a first name for display.
+   * @param {string|null} name - Raw name value
+   * @returns {string|null} Cleaned name, or null when empty
+   */
+  function sanitizeFirstName(name) {
+    if (!name) return null;
+    const trimmed = String(name).trim();
+    if (!trimmed) return null;
+    return trimmed.length > FIRST_NAME_MAX_LENGTH
+      ? trimmed.slice(0, FIRST_NAME_MAX_LENGTH).trimEnd() + '…'
+      : trimmed;
+  }
+
   function captureFirstName() {
     const fromUrl = findParamCaseInsensitive(initialUrlParams, 'firstName');
     if (fromUrl && !isNullSentinel(fromUrl)) {
-      gsFirstName = fromUrl;
-      try { sessionStorage.setItem('dpr_gc_first_name', fromUrl); } catch (e) {}
+      gsFirstName = sanitizeFirstName(fromUrl);
+      try { sessionStorage.setItem('dpr_gc_first_name', gsFirstName); } catch (e) {}
     } else {
-      try { gsFirstName = sessionStorage.getItem('dpr_gc_first_name'); } catch (e) {}
+      try { gsFirstName = sanitizeFirstName(sessionStorage.getItem('dpr_gc_first_name')); } catch (e) {}
     }
   }
 
