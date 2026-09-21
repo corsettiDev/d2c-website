@@ -447,12 +447,14 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 
 **Webflow Embed:**
 ```html
+<!-- All data-* attributes live on the Embed element itself (script-loader reads
+     them from the loader script's PARENT and copies them onto the loaded script). -->
 <div data-persona="family"
      data-default-coverage="2"
      data-api-url="https://prodgsd2cins.greenshield.ca"
-     data-api-url-staging="https://qagsd2cins.greenshield.ca">
-  <script src="https://cdn.jsdelivr.net/gh/corsettiDev/d2c-website/utilities/script-loader-min.js"
-          data-prod="https://cdn.jsdelivr.net/gh/corsettiDev/d2c-website@COMMIT/persona-quotes.js"></script>
+     data-api-url-staging="https://qagsd2cins.greenshield.ca"
+     data-prod="https://cdn.jsdelivr.net/gh/corsettiDev/d2c-website@COMMIT/persona-quotes.js">
+  <script src="https://cdn.jsdelivr.net/gh/corsettiDev/d2c-website/utilities/script-loader-min.js"></script>
 </div>
 ```
 Pin `@COMMIT` to a specific commit hash (same pattern as the quote page's pinned `dpr-results.js`).
