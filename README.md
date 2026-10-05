@@ -376,6 +376,97 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 
 ---
 
+### 4b. Persona Page Quotes (persona-quotes.js)
+
+**Purpose:** Self-contained quote experience for persona landing pages (e.g. `/en-ca/personal/family`). Replaces `plan-card-display.js` + `utilities/plan-injector.js` on those pages: renders plan cards from the CMS source, opens a native `<dialog>` quote modal, fetches live pricing, and stores inputs exactly as the quote flow does so Apply and the results page carry on seamlessly.
+
+**Key Features:**
+
+#### Quote Modal Flow
+- "See my prices" trigger opens a details modal (CoverageType, Age, Province, Dependents)
+- Optional contact modal step (name/email/phone, skippable) before the API call
+- Existing Webflow modal markup promoted to native `<dialog>` at runtime
+- Auto-fetches prices on page load when valid stored/URL values already exist
+- Localized (EN/FR) via `document.documentElement.lang`
+
+#### Plan Card Rendering
+- Clones cards from `[dpr-plan-injector-source]` into `[dpr-plan-injector="PLAN A, PLAN B"]` targets
+- IDs de-duplicated per clone; tooltips re-initialized via `window.TooltipSystem`
+- Quebec (Province == 10): call button shown, Apply hidden
+- Hospital accommodation checkbox with price toggle (same behavior as dpr-results.js)
+
+#### Storage Parity with Quote Flow
+- Confirmed inputs merged into `localStorage.dpr_local_data`
+- Contact details (if given) saved to `sessionStorage.dpr_session_data`
+- Full API response saved to `sessionStorage.dpr_results_data`
+- Payload includes stored filter answers (`CoverageTier`, `InsuranceReason`, `PreExisting`, `PreExistingCoverage`) and `visitor_attribution` data
+
+#### Continuation & View All Plans Links
+- Links to `/personal/get-quote` / `/personal/get-a-quote` get the confirmed core params appended
+- `[data-persona-view-all]` elements (v1.1.0):
+  - Hidden until a quote succeeds (`hidden` attribute — author them with `hidden` set in Webflow to avoid a flash; do not use a `display:none` class)
+  - The element itself may be the `<a>`, or a wrapper containing one
+  - Author the href as the localized quote results page (e.g. `/en-ca/personal/quote`); the script appends `CoverageType`, `Dependents`, `Age`, `Province`, stored `CoverageTier` / `InsuranceReason` when valid, and `plans=view-all`
+  - `plans=view-all` is the same flag `dpr-quote.js` uses (`[data-dpr-redirect="all"]`) — any value other than `suggested` makes the results page show all plans
+  - Clicks push a `persona_view_all` dataLayer event
+
+**dataLayer Events:** `persona_quote_open`, `persona_quote_request`, `persona_quote_success`, `persona_quote_error`, `persona_quote_apply`, `persona_contact_open`, `persona_contact_skip`, `persona_view_all` (all include `persona`)
+
+**Custom Events:** Dispatches `persona-plans-rendered` on `window` after card rendering (`detail: { success: boolean }`)
+
+**Page States:** `data-persona-state` on the page wrapper: `empty` → `loading` → `ready` / `error`
+
+**Required HTML Attributes:**
+
+*Page Structure:*
+- `[data-persona-quote-page]` - Page wrapper (all delegation scoped here)
+- `[dpr-plan-injector-source]` - Hidden CMS plan card source
+- `[dpr-plan-injector="PLAN A, PLAN B"]` - Card injection targets
+- `[data-persona-start]` - "See my prices" intro elements (hidden once confirmed)
+- `[data-persona-summary]` - Confirmed-details summary block
+- `[data-persona-value="CoverageType|Age|Province|Dependents"]` - Summary value slots
+- `[data-persona-dependents]` - Blocks hidden when coverage has no children
+- `[data-persona-status]` / `[data-persona-modal-status]` - Live status messages
+- `[data-persona-retry]` - Retry trigger on error states
+- `[data-persona-view-all]` - View All Plans link/wrapper (see above)
+
+*Modal Elements:* (same convention as dpr-results.js)
+- `[data-form-trigger="quote-form"]`, `[data-form-trigger="quote-modal"]`, `[data-form-trigger="open-quote-modal"]`, `[data-form-trigger="get-quote"]`, `[data-form-trigger="cancel"]`
+- `.gsi-quote-modal_component` - Optional contact modal shell with fields `#persona-contact-FirstName|LastName|PhoneNumber|EmailAddress|PrivacyPolicy|MarketingPermission`
+- `[data-persona-contact-skip]` - Skip button in contact modal
+
+*Plan Cards:* (same convention as dpr-results.js)
+- `[dpr-results-plan="PLAN NAME"]`, `[dpr-results-price="price"]`, `[dpr-results-apply="button"]`, `[dpr-results-quebec="call"]`, `[data-results="dynamic-block"]`, `[data-quebec-hide]`
+- `[dpr-quote-hospital="checkbox-wrapper|check-trigger|text-line"]`
+
+**Script Attributes:** (set on the Webflow Embed parent; copied by script-loader)
+- `data-api-url` - Production API root (required; no hardcoded URLs)
+- `data-api-url-staging` - Staging API root (used on `*.webflow.io`)
+- `data-persona` - Persona name for analytics (default: "family")
+- `data-default-coverage` - Default CoverageType preselect (default: "2")
+
+**Webflow Embed:**
+```html
+<!-- All data-* attributes live on the Embed element itself (script-loader reads
+     them from the loader script's PARENT and copies them onto the loaded script). -->
+<div data-persona="family"
+     data-default-coverage="2"
+     data-api-url="https://prodgsd2cins.greenshield.ca"
+     data-api-url-staging="https://qagsd2cins.greenshield.ca"
+     data-prod="https://cdn.jsdelivr.net/gh/corsettiDev/d2c-website@COMMIT/persona-quotes.js">
+  <script src="https://cdn.jsdelivr.net/gh/corsettiDev/d2c-website/utilities/script-loader-min.js"></script>
+</div>
+```
+Pin `@COMMIT` to a specific commit hash (same pattern as the quote page's pinned `dpr-results.js`).
+
+**Rolling Out to Other Personas** (`/retired`, `/self-employed`, `/leb`, `/contractor`):
+1. Reuse the Family page's quote section + modals as a Webflow component
+2. Set `data-persona` to the page's persona and `data-default-coverage` to the persona's most likely CoverageType (`0` Myself, `1` Myself & Child(ren), `2` Myself, Spouse & Child(ren), `3` Myself & Significant Other)
+3. Adjust `[dpr-plan-injector="…"]` plan lists per persona as designed
+4. Keep the same pinned embed snippet — no script changes needed per persona
+
+---
+
 ### 5. Utility: Quebec Province Check (utilities/quebec-check.js)
 
 **Purpose:** Provides global Quebec province detection utility
@@ -710,6 +801,7 @@ if (customInput) {
 ├── dpr-results-2.js          # Stage 2 variant: progressive disclosure (lenient validation + filter form)
 ├── plan-card-display.js      # Plan comparison and filtering utility
 ├── plan-page.js              # Individual plan page handler
+├── persona-quotes.js         # Persona pages: modal quote + plan cards + view-all
 ├── attribution-tracker.js    # Marketing attribution tracking
 ├── utilities/
 │   ├── script-loader.js          # Environment-based script loader
