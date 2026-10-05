@@ -610,11 +610,14 @@
     // Handle cancel button - can keep for explicit cancel action
     const cancelButton = document.querySelector('[data-form-trigger="cancel"]');
     if (cancelButton) {
-      cancelButton.addEventListener('click', () => {
+      cancelButton.addEventListener('click', (e) => {
+        e.preventDefault();
         if (form) {
           resetModalFieldValues(form);
         }
-        // Note: Modal library will call dialog.close() which triggers close event
+        // The cancel control is a link; the modal library only closes on
+        // <button> elements, so close the dialog here (mirrors the X button).
+        modal.close();
       });
     }
 
