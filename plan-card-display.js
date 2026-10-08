@@ -1433,6 +1433,16 @@
     modal.querySelectorAll('[dpr-rider="back"]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.preventDefault();
+        // Keep mast modal.js (document-level close handler) out of it; this handler decides.
+        e.stopPropagation();
+
+        // From the exclusions view, back returns to the rider view
+        const exclusionsView = modal.querySelector('[dpr-rider="view-exclusions"]');
+        if (exclusionsView && getComputedStyle(exclusionsView).display !== 'none') {
+          showRiderView(modal, 'main');
+          return;
+        }
+
         modal.close();
         if (planItem.dataset.riderFrom === 'hq') {
           const hq = findHqDialog(block);
