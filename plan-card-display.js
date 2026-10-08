@@ -1044,6 +1044,13 @@
           quebecBtn.style.display = 'none';
         });
 
+        // Reset hospital rider modal state
+        const riderModal = block.querySelector('[dpr-rider="modal"]');
+        if (riderModal && riderModal.open) riderModal.close();
+        delete planItem.dataset.riderSelected;
+        delete planItem.dataset.hospitalConfirmation;
+        delete planItem.dataset.riderFrom;
+
         // Hide/reset hospital checkbox
         const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
         if (checkboxWrapper) {
@@ -1222,6 +1229,303 @@
     console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${displayPrice}`);
   }
 
+  // ============================================================
+  // HOSPITAL RIDER MODAL
+  // ============================================================
+  //
+  // Replaces the inline hospital checkbox with a per-card <dialog>.
+  // Routing (decided in the Apply click handler in fillChart):
+  //   HQ-required plans: Apply now -> HQ interstitial -> "Continue" (dpr-results-apply)
+  //                      -> rider modal -> Continue to application
+  //   GA / no-HQ plans:  Apply now (dpr-results-apply) -> rider modal -> Continue to application
+  //   Plans with no 'Hospital Accommodation' in QuoteOptions never see the rider modal.
+  //
+  // Markup contract — one [dpr-rider="modal"] <dialog> inside each [data-results="dynamic-block"]:
+  //   [dpr-rider="modal"]             the <dialog>
+  //   [dpr-rider="back"]              back link: closes; reopens the HQ interstitial if we came from it
+  //   [dpr-rider="total"]             total monthly premium text ("$224", live: base or base + rider)
+  //   [dpr-rider="accordion-toggle"]  chevron: shows/hides [dpr-rider="details"]; gets .is-open
+  //   [dpr-rider="details"]           collapsible description block (expanded from HQ, collapsed on GA)
+  //   [dpr-rider="option-premium"]    rider premium text ("+$6")
+  //   [dpr-rider="price-row"]         wrapper for "+$6 per month" (hidden once added)
+  //   [dpr-rider="add"]               Add Coverage button (hidden once added)
+  //   [dpr-rider="remove"]            Remove Coverage link (shown once added)
+  //   [dpr-rider="exclusions-open"]   "view exclusions" link
+  //   [dpr-rider="exclusions-close"]  "Back" inside the exclusions view
+  //   [dpr-rider="view-main"]         main view wrapper
+  //   [dpr-rider="view-exclusions"]   exclusions view wrapper (hidden by default)
+  //   [dpr-rider="continue"]          Continue to application (do NOT also give it dpr-results-apply)
+  //
+  // State lives on the plan item's dataset: basePremium, hospitalOption, confirmation,
+  // riderSelected ('true'|'false'), riderFrom ('hq'|'direct'), hospitalConfirmation (cached PUT result).
+
+  const HOSPITAL_OPTION_NAME = 'Hospital Accommodation';
+
+  /**
+   * Show/hide an element. Webflow hides the initial-hidden pieces (remove link,
+   * exclusions view) via class styles, so showing needs an explicit display value.
+   * @param {HTMLElement} el
+   * @param {boolean} visible
+   * @param {string} display - display value to use when the stylesheet says none
+   */
+  function setRiderVisible(el, visible, display) {
+    if (!visible) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    if (getComputedStyle(el).display === 'none') el.style.display = display || 'block';
+  }
+
+  /**
+   * Format a premium for display: whole dollars when there are no cents, otherwise 2 decimals.
+   * @param {number|string} value
+   * @returns {string} e.g. "$224" or "$161.40"
+   */
+  function formatPremium(value) {
+    const n = parseFloat(value);
+    if (isNaN(n)) return '';
+    return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+  }
+
+  /**
+   * Read the stored hospital option for a plan item
+   * @param {HTMLElement} planItem
+   * @returns {Object|null}
+   */
+  function getStoredHospitalOption(planItem) {
+    try {
+      return planItem.dataset.hospitalOption ? JSON.parse(planItem.dataset.hospitalOption) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Find the HQ interstitial dialog in a block (the dialog that is not the rider modal
+   * and carries an apply button).
+   * @param {HTMLElement} block
+   * @returns {HTMLDialogElement|null}
+   */
+  function findHqDialog(block) {
+    return Array.from(block.querySelectorAll('dialog')).find(d =>
+      d.getAttribute('dpr-rider') !== 'modal' && d.querySelector('[dpr-results-apply="button"]')
+    ) || null;
+  }
+
+  /**
+   * Apply the selected/unselected state to the rider modal UI and the live total.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {boolean} selected
+   */
+  function setRiderState(planItem, block, selected) {
+    planItem.dataset.riderSelected = selected ? 'true' : 'false';
+
+    const modal = block.querySelector('[dpr-rider="modal"]');
+    if (!modal) return;
+
+    const base = parseFloat(planItem.dataset.basePremium) || 0;
+    const option = getStoredHospitalOption(planItem);
+    const riderPremium = option ? (parseFloat(option.OptionPremium) || 0) : 0;
+    const total = selected ? base + riderPremium : base;
+
+    modal.querySelectorAll('[dpr-rider="total"]').forEach(el => { el.textContent = formatPremium(total); });
+    modal.querySelectorAll('[dpr-rider="add"]').forEach(el => setRiderVisible(el, !selected, 'inline-flex'));
+    modal.querySelectorAll('[dpr-rider="price-row"]').forEach(el => setRiderVisible(el, !selected, 'flex'));
+    modal.querySelectorAll('[dpr-rider="remove"]').forEach(el => setRiderVisible(el, selected, 'inline-flex'));
+    modal.querySelectorAll('[dpr-rider="continue"]').forEach(el => {
+      el.setAttribute('data-rider-selected', selected ? 'true' : 'false');
+    });
+    modal.classList.toggle('is-rider-added', selected);
+
+    console.log(`Hospital rider ${selected ? 'added' : 'removed'} for ${planItem.getAttribute('dpr-results-plan')}. Total: ${formatPremium(total)}`);
+  }
+
+  /**
+   * Switch the rider modal between its main view and the exclusions view
+   * @param {HTMLElement} modal
+   * @param {'main'|'exclusions'} view
+   */
+  function showRiderView(modal, view) {
+    modal.querySelectorAll('[dpr-rider="view-main"]').forEach(el => setRiderVisible(el, view === 'main', 'flex'));
+    modal.querySelectorAll('[dpr-rider="view-exclusions"]').forEach(el => setRiderVisible(el, view === 'exclusions', 'flex'));
+  }
+
+  /**
+   * Expand or collapse the rider description accordion
+   * @param {HTMLElement} modal
+   * @param {boolean} open
+   */
+  function setRiderDetailsOpen(modal, open) {
+    modal.querySelectorAll('[dpr-rider="details"]').forEach(el => setRiderVisible(el, open, 'flex'));
+    modal.querySelectorAll('[dpr-rider="accordion-toggle"]').forEach(el => { el.classList.toggle('is-open', open); });
+  }
+
+  /**
+   * Open the rider modal for a plan.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {'hq'|'direct'} from - 'hq' when arriving from the HQ interstitial
+   * @returns {boolean} true if a modal was opened
+   */
+  function openRiderModal(planItem, block, from) {
+    const modal = block.querySelector('[dpr-rider="modal"]');
+    if (!modal || typeof modal.showModal !== 'function') return false;
+
+    planItem.dataset.riderFrom = from;
+
+    // Figma: description expanded when coming from the HQ interstitial, collapsed on the GA route
+    setRiderDetailsOpen(modal, from === 'hq');
+    showRiderView(modal, 'main');
+    setRiderState(planItem, block, planItem.dataset.riderSelected === 'true');
+
+    if (!modal.open) modal.showModal();
+    return true;
+  }
+
+  /**
+   * Populate and wire the rider modal for a plan (once per fillChart).
+   * Clones the dialog to drop stale listeners, mirroring the apply-button pattern.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {Object} hospitalOption - The QuoteOptions entry for Hospital Accommodation
+   */
+  function setupRiderModal(planItem, block, hospitalOption) {
+    const existing = block.querySelector('[dpr-rider="modal"]');
+    if (!existing) return;
+
+    const modal = existing.cloneNode(true);
+    existing.parentNode.replaceChild(modal, existing);
+
+    const riderPremium = parseFloat(hospitalOption.OptionPremium) || 0;
+    modal.querySelectorAll('[dpr-rider="option-premium"]').forEach(el => {
+      el.textContent = `+${formatPremium(riderPremium)}`;
+    });
+
+    // Fresh state for this quote (no persistence across quotes)
+    planItem.dataset.riderSelected = 'false';
+    delete planItem.dataset.hospitalConfirmation;
+    delete planItem.dataset.riderFrom;
+    showRiderView(modal, 'main');
+    setRiderState(planItem, block, false);
+
+    modal.querySelectorAll('[dpr-rider="add"]').forEach(el => {
+      el.addEventListener('click', (e) => { e.preventDefault(); setRiderState(planItem, block, true); });
+    });
+
+    modal.querySelectorAll('[dpr-rider="remove"]').forEach(el => {
+      el.addEventListener('click', (e) => { e.preventDefault(); setRiderState(planItem, block, false); });
+    });
+
+    modal.querySelectorAll('[dpr-rider="accordion-toggle"]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        setRiderDetailsOpen(modal, !el.classList.contains('is-open'));
+      });
+    });
+
+    modal.querySelectorAll('[dpr-rider="exclusions-open"]').forEach(el => {
+      el.addEventListener('click', (e) => { e.preventDefault(); showRiderView(modal, 'exclusions'); });
+    });
+
+    modal.querySelectorAll('[dpr-rider="exclusions-close"]').forEach(el => {
+      el.addEventListener('click', (e) => { e.preventDefault(); showRiderView(modal, 'main'); });
+    });
+
+    modal.querySelectorAll('[dpr-rider="back"]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        modal.close();
+        if (planItem.dataset.riderFrom === 'hq') {
+          const hq = findHqDialog(block);
+          if (hq && !hq.open) hq.showModal();
+        }
+      });
+    });
+
+    modal.querySelectorAll('[dpr-rider="continue"]').forEach(el => {
+      el.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await proceedToApplication(planItem, block, el);
+      });
+    });
+
+    console.log(`Hospital rider modal ready for ${planItem.getAttribute('dpr-results-plan')}: ${formatPremium(riderPremium)}`);
+  }
+
+  /**
+   * Push the rider decision to the dataLayer once, at submission (not per toggle).
+   * Only fires for plans where the rider was offered.
+   * @param {HTMLElement} planItem
+   * @param {boolean} riderSelected
+   */
+  function pushRiderTracking(planItem, riderSelected) {
+    try {
+      const option = getStoredHospitalOption(planItem);
+      if (!option) return;
+
+      const base = parseFloat(planItem.dataset.basePremium) || 0;
+      const riderPremium = parseFloat(option.OptionPremium) || 0;
+
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'hospital_rider_submit',
+        plan_name: planItem.getAttribute('dpr-results-plan'),
+        rider_selected: riderSelected,
+        rider_premium: riderPremium,
+        base_premium: base,
+        total_premium: riderSelected ? base + riderPremium : base,
+        rider_flow: planItem.dataset.riderFrom || 'checkbox'
+      });
+    } catch (e) {
+      console.warn('Rider tracking push failed:', e);
+    }
+  }
+
+  /**
+   * Final hand-off: apply the rider via PUT when selected (cached), fetch the
+   * application URL and redirect. Shared by the Apply buttons and the rider modal's Continue.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {HTMLElement} btn - The button that was clicked (for loading/error text)
+   */
+  async function proceedToApplication(planItem, block, btn) {
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = loadingText();
+
+    try {
+      const baseConfirmation = btn.dataset.confirmation || planItem.dataset.confirmation;
+      let confirmationToUse = baseConfirmation;
+
+      // Rider selected via the modal, or via the legacy checkbox where the modal isn't present
+      const legacyCheckbox = block.querySelector('[dpr-quote-hospital="check-trigger"]');
+      const riderSelected = planItem.dataset.riderSelected === 'true'
+        || (!!legacyCheckbox && legacyCheckbox.checked);
+
+      if (riderSelected && getStoredHospitalOption(planItem)) {
+        if (planItem.dataset.hospitalConfirmation) {
+          confirmationToUse = planItem.dataset.hospitalConfirmation;
+        } else {
+          confirmationToUse = await updateQuoteOption(baseConfirmation, HOSPITAL_OPTION_NAME, true);
+          planItem.dataset.hospitalConfirmation = confirmationToUse;
+        }
+      }
+
+      pushRiderTracking(planItem, riderSelected);
+
+      const url = await getApplicationUrl(confirmationToUse);
+      const finalUrl = decorateWithGtmAutoLinker(url);
+
+      // Short delay for GA hit to flush
+      setTimeout(() => {
+        window.location.assign(finalUrl);
+      }, 200);
+    } catch (err) {
+      console.error('Error getting application URL:', err);
+      btn.textContent = errorRetryText();
+      btn.disabled = false;
+    }
+  }
+
   /**
    * Populate plan prices and wire up Apply Now buttons
    * @param {Object} resultsData - Full dpr_results_data structure
@@ -1275,11 +1579,23 @@
         );
 
         const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+        const riderModal = block.querySelector('[dpr-rider="modal"]');
 
-        if (hospitalOption && checkboxWrapper) {
-          // Store hospital option data and base premium for calculations
+        // Store quote data needed by the rider modal and the application hand-off
+        planItem.dataset.confirmation = quote.ConfirmationNumber;
+        planItem.dataset.basePremium = quote.Premium;
+        if (hospitalOption) {
           planItem.dataset.hospitalOption = JSON.stringify(hospitalOption);
-          planItem.dataset.basePremium = quote.Premium; // Store original price
+        } else {
+          delete planItem.dataset.hospitalOption;
+        }
+
+        if (hospitalOption && riderModal) {
+          // Rider modal present: wire it up and keep the legacy checkbox hidden
+          setupRiderModal(planItem, block, hospitalOption);
+          if (checkboxWrapper) checkboxWrapper.style.display = 'none';
+        } else if (hospitalOption && checkboxWrapper) {
+          // Legacy checkbox (blocks without the rider modal markup)
 
           // Show checkbox UI
           checkboxWrapper.style.display = 'block';
@@ -1326,41 +1642,18 @@
           newBtn.addEventListener('click', async (e) => {
             e.preventDefault();
 
-            const originalText = newBtn.textContent;
-            newBtn.disabled = true;
-            newBtn.textContent = loadingText();
-
-            try {
-              // If hospital accommodation is checked, swap in the updated
-              // quote's confirmation number (cached after the first PUT).
-              let confirmationToUse = newBtn.dataset.confirmation;
-              const hospitalCheckbox = block.querySelector('[dpr-quote-hospital="check-trigger"]');
-
-              if (hospitalCheckbox && hospitalCheckbox.checked) {
-                if (newBtn.dataset.hospitalConfirmation) {
-                  confirmationToUse = newBtn.dataset.hospitalConfirmation;
-                } else {
-                  confirmationToUse = await updateQuoteOption(
-                    newBtn.dataset.confirmation,
-                    'Hospital Accommodation',
-                    true
-                  );
-                  newBtn.dataset.hospitalConfirmation = confirmationToUse;
-                }
-              }
-
-              const url = await getApplicationUrl(confirmationToUse);
-              const finalUrl = decorateWithGtmAutoLinker(url);
-
-              // Short delay for GA hit to flush
-              setTimeout(() => {
-                window.location.assign(finalUrl);
-              }, 200);
-            } catch (err) {
-              console.error('Error getting application URL:', err);
-              newBtn.textContent = errorRetryText();
-              newBtn.disabled = false;
+            // Route through the hospital rider modal when the plan offers the rider
+            // and the block carries the modal markup. The modal's own Continue
+            // button finishes the hand-off via proceedToApplication.
+            const riderModal = block.querySelector('[dpr-rider="modal"]');
+            if (hospitalOption && riderModal && !newBtn.closest('[dpr-rider="modal"]')) {
+              const hqDialog = newBtn.closest('dialog');
+              if (hqDialog) hqDialog.close();
+              openRiderModal(planItem, block, hqDialog ? 'hq' : 'direct');
+              return;
             }
+
+            await proceedToApplication(planItem, block, newBtn);
           });
         });
 
