@@ -1378,8 +1378,8 @@
 
     planItem.dataset.riderFrom = from;
 
-    // Figma: description expanded when coming from the HQ interstitial, collapsed on the GA route
-    setRiderDetailsOpen(modal, from === 'hq');
+    // Description starts expanded on every route (user can collapse it via the chevron)
+    setRiderDetailsOpen(modal, true);
     showRiderView(modal, 'main');
     setRiderState(planItem, block, planItem.dataset.riderSelected === 'true');
 
