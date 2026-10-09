@@ -1855,7 +1855,9 @@
         // The rider is offered on every plan that carries the modal markup. When the API
         // doesn't return the option for a plan, fall back to the configured premium; the
         // PUT on Continue still goes to the API, which is the source of truth.
-        const hospitalOption = apiHospitalOption || (riderAllPlans && riderModal
+        // Checked at plan level (not block level): a plan can have several dynamic blocks and
+        // only the card block carries the modal; the stored option must survive every pass.
+        const hospitalOption = apiHospitalOption || (riderAllPlans && planItem.querySelector('[dpr-rider="modal"]')
           ? { OptionName: HOSPITAL_OPTION_NAME, OptionPremium: defaultRiderPremium, Selected: false, fromApi: false }
           : null);
 
