@@ -25,6 +25,12 @@
   // setup global variable for attribute usage
   const hospitalAccommodationText = document.currentScript.getAttribute("data-hospital-text") || "Add optional hospital accommodation for $";
 
+  // Hospital rider modal: offer it on every plan (default) or only when the API returns the option
+  const riderAllPlans = (document.currentScript.getAttribute("data-rider-all-plans") || "true") !== "false";
+
+  // Fallback rider premium for plans where the API doesn't return the option (yet)
+  const defaultRiderPremium = parseFloat(document.currentScript.getAttribute("data-rider-premium")) || 6;
+
   // Apply button text
   const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
 
@@ -1737,7 +1743,8 @@
         rider_premium: riderPremium,
         base_premium: base,
         total_premium: riderSelected ? base + riderPremium : base,
-        rider_flow: planItem.dataset.riderFrom || 'checkbox'
+        rider_flow: planItem.dataset.riderFrom || 'checkbox',
+        rider_offered_by_api: option.fromApi !== false
       });
     } catch (e) {
       console.warn('Rider tracking push failed:', e);
@@ -1838,12 +1845,19 @@
         }
 
         // Check for hospital accommodation option
-        const hospitalOption = quote.QuoteOptions?.find(
+        const apiHospitalOption = quote.QuoteOptions?.find(
           option => option.OptionName === 'Hospital Accommodation'
         );
 
         const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
         const riderModal = block.querySelector('[dpr-rider="modal"]');
+
+        // The rider is offered on every plan that carries the modal markup. When the API
+        // doesn't return the option for a plan, fall back to the configured premium; the
+        // PUT on Continue still goes to the API, which is the source of truth.
+        const hospitalOption = apiHospitalOption || (riderAllPlans && riderModal
+          ? { OptionName: HOSPITAL_OPTION_NAME, OptionPremium: defaultRiderPremium, Selected: false, fromApi: false }
+          : null);
 
         // Store quote data needed by the rider modal and the application hand-off
         planItem.dataset.confirmation = quote.ConfirmationNumber;
