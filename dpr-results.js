@@ -31,6 +31,11 @@
   // Fallback rider premium for plans where the API doesn't return the option (yet)
   const defaultRiderPremium = parseFloat(document.currentScript.getAttribute("data-rider-premium")) || 6;
 
+  // Plans that never get the rider modal (comma-separated PlanNames), e.g. LINK plans
+  // where hospital accommodation is already an included benefit.
+  const riderExcludedPlans = (document.currentScript.getAttribute("data-rider-exclude") || "")
+    .split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+
   // Apply button text
   const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
 
@@ -1857,9 +1862,11 @@
         // PUT on Continue still goes to the API, which is the source of truth.
         // Checked at plan level (not block level): a plan can have several dynamic blocks and
         // only the card block carries the modal; the stored option must survive every pass.
-        const hospitalOption = apiHospitalOption || (riderAllPlans && planItem.querySelector('[dpr-rider="modal"]')
+        const riderExcluded = riderExcludedPlans.includes(String(quote.PlanName).toUpperCase());
+        const hospitalOption = riderExcluded ? null : (apiHospitalOption || (riderAllPlans && planItem.querySelector('[dpr-rider="modal"]')
           ? { OptionName: HOSPITAL_OPTION_NAME, OptionPremium: defaultRiderPremium, Selected: false, fromApi: false }
-          : null);
+          : null));
+        if (riderExcluded) console.log(`Hospital rider excluded for ${quote.PlanName}`);
 
         // Store quote data needed by the rider modal and the application hand-off
         planItem.dataset.confirmation = quote.ConfirmationNumber;
