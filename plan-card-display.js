@@ -1400,11 +1400,8 @@
    * @param {Object} hospitalOption - The QuoteOptions entry for Hospital Accommodation
    */
   function setupRiderModal(planItem, block, hospitalOption) {
-    const existing = block.querySelector('[dpr-rider="modal"]');
-    if (!existing) return;
-
-    const modal = existing.cloneNode(true);
-    existing.parentNode.replaceChild(modal, existing);
+    const modal = block.querySelector('[dpr-rider="modal"]');
+    if (!modal) return;
 
     const riderPremium = parseFloat(hospitalOption.OptionPremium) || 0;
     modal.querySelectorAll('[dpr-rider="option-premium"]').forEach(el => {
@@ -1418,58 +1415,109 @@
     showRiderView(modal, 'main');
     setRiderState(planItem, block, false);
 
-    modal.querySelectorAll('[dpr-rider="add"]').forEach(el => {
-      el.addEventListener('click', (e) => { e.preventDefault(); setRiderState(planItem, block, true); });
-    });
+    // No per-element listeners here: every control is handled by the document-level
+    // delegated handler (installRiderDelegation) so cards cloned later by
+    // plan-injector.js keep working.
 
-    modal.querySelectorAll('[dpr-rider="remove"]').forEach(el => {
-      el.addEventListener('click', (e) => { e.preventDefault(); setRiderState(planItem, block, false); });
-    });
+    console.log(`Hospital rider modal ready for ${planItem.getAttribute('dpr-results-plan')}: ${formatPremium(riderPremium)}`);
+  }
 
-    modal.querySelectorAll('[dpr-rider="accordion-toggle"]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.preventDefault();
-        setRiderDetailsOpen(modal, !el.classList.contains('is-open'));
-      });
-    });
+  /**
+   * One document-level click handler (capture phase) for Apply buttons and every
+   * rider-modal control. Runs before any per-element handler — including the ones
+   * plan-injector.js attaches to cloned cards — and stops propagation so those
+   * legacy handlers never fire. All state lives on the plan item's dataset, which
+   * cloneNode copies, so injected clones behave exactly like the originals.
+   */
+  function handleRiderDelegatedClick(e) {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
 
-    modal.querySelectorAll('[dpr-rider="exclusions-open"]').forEach(el => {
-      el.addEventListener('click', (e) => { e.preventDefault(); showRiderView(modal, 'exclusions'); });
-    });
+    // --- Apply buttons: card buttons and the HQ interstitial's Continue ---
+    const applyBtn = target.closest('[dpr-results-apply="button"]');
+    if (applyBtn) {
+      const planItem = applyBtn.closest('[dpr-results-plan]');
+      if (!planItem) return;
+      if (applyBtn.closest('[dpr-rider="modal"]')) return; // never used inside the rider modal
 
-    modal.querySelectorAll('[dpr-rider="exclusions-close"]').forEach(el => {
-      el.addEventListener('click', (e) => { e.preventDefault(); showRiderView(modal, 'main'); });
-    });
+      e.preventDefault();
+      e.stopPropagation();
 
-    modal.querySelectorAll('[dpr-rider="back"]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.preventDefault();
-        // Keep mast modal.js (document-level close handler) out of it; this handler decides.
-        e.stopPropagation();
+      const block = applyBtn.closest('[data-results="dynamic-block"]') || planItem;
+      const riderModal = planItem.querySelector('[dpr-rider="modal"]');
+      const option = getStoredHospitalOption(planItem);
 
-        // From the exclusions view, back returns to the rider view
+      if (option && riderModal) {
+        const hqDialog = applyBtn.closest('dialog');
+        if (hqDialog) hqDialog.close();
+        const modalBlock = riderModal.closest('[data-results="dynamic-block"]') || planItem;
+        openRiderModal(planItem, modalBlock, hqDialog ? 'hq' : 'direct');
+        return;
+      }
+
+      proceedToApplication(planItem, block, applyBtn);
+      return;
+    }
+
+    // --- Rider modal controls ---
+    const control = target.closest('[dpr-rider]');
+    if (!control) return;
+    const role = control.getAttribute('dpr-rider');
+    if (role === 'modal') return;
+
+    const modal = control.closest('[dpr-rider="modal"]');
+    const planItem = modal && modal.closest('[dpr-results-plan]');
+    if (!modal || !planItem) return;
+    const block = modal.closest('[data-results="dynamic-block"]') || planItem;
+
+    switch (role) {
+      case 'add':
+        e.preventDefault(); e.stopPropagation();
+        setRiderState(planItem, block, true);
+        break;
+      case 'remove':
+        e.preventDefault(); e.stopPropagation();
+        setRiderState(planItem, block, false);
+        break;
+      case 'accordion-toggle':
+        e.preventDefault(); e.stopPropagation();
+        setRiderDetailsOpen(modal, !control.classList.contains('is-open'));
+        break;
+      case 'exclusions-open':
+        e.preventDefault(); e.stopPropagation();
+        showRiderView(modal, 'exclusions');
+        break;
+      case 'exclusions-close':
+        e.preventDefault(); e.stopPropagation();
+        showRiderView(modal, 'main');
+        break;
+      case 'back': {
+        e.preventDefault(); e.stopPropagation();
         const exclusionsView = modal.querySelector('[dpr-rider="view-exclusions"]');
         if (exclusionsView && getComputedStyle(exclusionsView).display !== 'none') {
           showRiderView(modal, 'main');
-          return;
+          break;
         }
-
         modal.close();
         if (planItem.dataset.riderFrom === 'hq') {
           const hq = findHqDialog(block);
           if (hq && !hq.open) hq.showModal();
         }
-      });
-    });
+        break;
+      }
+      case 'continue':
+        e.preventDefault(); e.stopPropagation();
+        proceedToApplication(planItem, block, control);
+        break;
+      default:
+        break;
+    }
+  }
 
-    modal.querySelectorAll('[dpr-rider="continue"]').forEach(el => {
-      el.addEventListener('click', async (e) => {
-        e.preventDefault();
-        await proceedToApplication(planItem, block, el);
-      });
-    });
-
-    console.log(`Hospital rider modal ready for ${planItem.getAttribute('dpr-results-plan')}: ${formatPremium(riderPremium)}`);
+  function installRiderDelegation() {
+    if (window.__dprRiderDelegationInstalled) return;
+    window.__dprRiderDelegationInstalled = true;
+    document.addEventListener('click', handleRiderDelegatedClick, true);
   }
 
   /**
@@ -1672,22 +1720,8 @@
           // Set confirmation number on the cloned element
           newBtn.dataset.confirmation = quote.ConfirmationNumber;
 
-          newBtn.addEventListener('click', async (e) => {
-            e.preventDefault();
-
-            // Route through the hospital rider modal when the plan offers the rider
-            // and the block carries the modal markup. The modal's own Continue
-            // button finishes the hand-off via proceedToApplication.
-            const riderModal = block.querySelector('[dpr-rider="modal"]');
-            if (hospitalOption && riderModal && !newBtn.closest('[dpr-rider="modal"]')) {
-              const hqDialog = newBtn.closest('dialog');
-              if (hqDialog) hqDialog.close();
-              openRiderModal(planItem, block, hqDialog ? 'hq' : 'direct');
-              return;
-            }
-
-            await proceedToApplication(planItem, block, newBtn);
-          });
+          // Click routing (rider modal vs. straight to application) is handled by the
+          // document-level delegated handler — see handleRiderDelegatedClick.
         });
 
         // Set button visibility based on Province
@@ -1775,6 +1809,7 @@
    * Main initialization function
    */
   function initialize() {
+    installRiderDelegation();
     console.log('Plan Card Display: Initializing...');
 
     // Prefill forms from localStorage
