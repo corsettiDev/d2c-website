@@ -30,6 +30,88 @@
   // Apply button text
   const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
 
+  // ============================================================
+  // API DEBUG PANEL (QA aid)
+  // ============================================================
+  // Enabled by ?debug=api on any page (sticky for the tab via
+  // sessionStorage; ?debug=off clears it) or data-api-debug="true" on
+  // the loader embed. Records every midtier call (request, response,
+  // status, timing) to sessionStorage['gs_api_debug_log'] grouped by
+  // page load, then loads utilities/api-debug.js from the same commit
+  // to render the panel below the results. No-op when disabled.
+  const apiDebugEnabled = (function () {
+    try {
+      const flag = new URLSearchParams(window.location.search).get('debug');
+      if (flag === 'api' || flag === 'on' || flag === '1') sessionStorage.setItem('gs_api_debug', '1');
+      if (flag === 'off' || flag === '0') sessionStorage.removeItem('gs_api_debug');
+      return document.currentScript.getAttribute('data-api-debug') === 'true'
+        || sessionStorage.getItem('gs_api_debug') === '1';
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  if (apiDebugEnabled && !window.__gsApiDebugRecorder) {
+    window.__gsApiDebugRecorder = true;
+
+    const apiDebugPageLoad = {
+      id: Date.now(),
+      path: window.location.pathname + window.location.search,
+      script: 'plan-card-display.js'
+    };
+
+    const apiDebugParse = (body) => {
+      if (body === null || body === undefined) return null;
+      try { return JSON.parse(body); } catch (e) { return String(body); }
+    };
+
+    const apiDebugRecord = (entry) => {
+      try {
+        const log = JSON.parse(sessionStorage.getItem('gs_api_debug_log') || '[]');
+        log.push(entry);
+        while (log.length > 25) log.shift();
+        sessionStorage.setItem('gs_api_debug_log', JSON.stringify(log));
+      } catch (e) {
+        console.warn('API debug: could not store log entry', e);
+      }
+      document.dispatchEvent(new CustomEvent('gs-api-debug', { detail: entry }));
+    };
+
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async function (input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      if (!url.startsWith(rootApiURL)) return nativeFetch(input, init);
+
+      const entry = Object.assign({}, apiDebugPageLoad, {
+        at: new Date().toISOString(),
+        method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(),
+        url,
+        request: apiDebugParse(init && init.body)
+      });
+      const started = performance.now();
+
+      try {
+        const res = await nativeFetch(input, init);
+        entry.status = res.status;
+        entry.ms = Math.round(performance.now() - started);
+        entry.response = apiDebugParse(await res.clone().text());
+        return res;
+      } catch (err) {
+        entry.ms = Math.round(performance.now() - started);
+        entry.error = String(err);
+        throw err;
+      } finally {
+        apiDebugRecord(entry);
+      }
+    };
+
+    const apiDebugScript = document.createElement('script');
+    apiDebugScript.src = document.currentScript.src.replace(/[^/]*$/, 'utilities/api-debug.js');
+    apiDebugScript.dataset.pageLoadId = String(apiDebugPageLoad.id);
+    apiDebugScript.dataset.apiUrl = rootApiURL;
+    document.head.appendChild(apiDebugScript);
+  }
+
   // Localized button state text (French on fr-ca pages)
   function isFrenchPage() {
     return (document.documentElement.lang || "").toLowerCase() === "fr-ca";
