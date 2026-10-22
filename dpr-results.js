@@ -23,7 +23,12 @@
 
   // Hospital accommodation text prefix
   // setup global variable for attribute usage
-  const hospitalAccommodationText = document.currentScript.getAttribute("data-hospital-text") || "Add optional hospital accommodation for $";
+  // Localized loader attributes: on fr-CA pages a data-<name>-fr attribute wins over
+  // data-<name>, so one loader element serves both locales without a Webflow locale override.
+  const pageIsFrench = (document.documentElement.lang || "").toLowerCase() === "fr-ca";
+  const localizedAttr = (name) =>
+    (pageIsFrench && document.currentScript.getAttribute(`${name}-fr`)) || document.currentScript.getAttribute(name);
+  const hospitalAccommodationText = localizedAttr("data-hospital-text") || "Add optional hospital accommodation for $";
 
   // Hospital rider modal: offer it on every plan (default) or only when the API returns the option
   const riderAllPlans = (document.currentScript.getAttribute("data-rider-all-plans") || "true") !== "false";
@@ -35,7 +40,7 @@
     .split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
 
   // Apply button text
-  const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
+  const applyButtonText = localizedAttr("data-apply-button-text") || "Apply Now";
 
   // ============================================================
   // API DEBUG PANEL (QA aid)
