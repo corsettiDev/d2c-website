@@ -74,8 +74,6 @@
   // Hospital rider modal: offer it on every plan (default) or only when the API returns the option
   const riderAllPlans = (document.currentScript.getAttribute("data-rider-all-plans") || "true") !== "false";
 
-  // Fallback rider premium for plans where the API doesn't return the option (yet)
-  const defaultRiderPremium = parseFloat(document.currentScript.getAttribute("data-rider-premium")) || 6;
 
   // Plans that never get the rider modal (comma-separated PlanNames), e.g. LINK plans
   // where hospital accommodation is already an included benefit.
@@ -1969,12 +1967,14 @@
 
     const base = parseFloat(planItem.dataset.basePremium) || 0;
     const option = getStoredHospitalOption(planItem);
-    const riderPremium = option ? (parseFloat(option.OptionPremium) || 0) : 0;
+    const riderMissing = !!(option && option.fromApi === false);
+    const riderPremium = option && !riderMissing ? (parseFloat(option.OptionPremium) || 0) : 0;
     const total = selected ? base + riderPremium : base;
 
     modal.querySelectorAll('[dpr-rider="total"]').forEach(el => { el.textContent = formatPremium(total); });
-    modal.querySelectorAll('[dpr-rider="add"]').forEach(el => setRiderVisible(el, !selected, 'inline-flex'));
-    modal.querySelectorAll('[dpr-rider="price-row"]').forEach(el => setRiderVisible(el, !selected, 'flex'));
+    modal.querySelectorAll('[dpr-rider="add"]').forEach(el => setRiderVisible(el, !selected && !riderMissing, 'inline-flex'));
+    modal.querySelectorAll('[dpr-rider="price-row"]').forEach(el => setRiderVisible(el, !selected && !riderMissing, 'flex'));
+    modal.querySelectorAll('[dpr-rider="missing"]').forEach(el => setRiderVisible(el, riderMissing, 'block'));
     modal.querySelectorAll('[dpr-rider="remove"]').forEach(el => setRiderVisible(el, selected, 'inline-flex'));
     modal.querySelectorAll('[dpr-rider="continue"]').forEach(el => {
       el.setAttribute('data-rider-selected', selected ? 'true' : 'false');
@@ -1982,6 +1982,32 @@
     modal.classList.toggle('is-rider-added', selected);
 
     console.log(`Hospital rider ${selected ? 'added' : 'removed'} for ${planItem.getAttribute('dpr-results-plan')}. Total: ${formatPremium(total)}`);
+  }
+
+  /**
+   * Show or hide the "not returned by the API" notice inside the rider modal. The notice
+   * element is created on first use (after the price row) so the Webflow markup needs no change.
+   * @param {HTMLElement} modal
+   * @param {boolean} show
+   * @param {string} planName
+   */
+  function setRiderMissingNotice(modal, show, planName) {
+    let notice = modal.querySelector('[dpr-rider="missing"]');
+    if (!notice && show) {
+      notice = document.createElement('div');
+      notice.setAttribute('dpr-rider', 'missing');
+      notice.setAttribute('role', 'status');
+      notice.style.cssText = 'margin:12px 0 0;padding:10px 12px;border-radius:8px;background:#FDE2E2;color:#9B1C1C;font-size:13px;line-height:1.4;';
+      const priceRow = modal.querySelector('[dpr-rider="price-row"]');
+      if (priceRow && priceRow.parentElement) {
+        priceRow.insertAdjacentElement('afterend', notice);
+      } else {
+        (modal.querySelector('[dpr-rider="view-main"]') || modal).appendChild(notice);
+      }
+    }
+    if (!notice) return;
+    notice.textContent = `Hospital Accommodation was not returned by the API for ${planName} (no "Hospital Accommodation" entry in QuoteOptions), so it can't be added here. Continue goes to the application without the rider. Check the quoteset response in the ?debug=api panel.`;
+    setRiderVisible(notice, show, 'block');
   }
 
   /**
@@ -2037,10 +2063,12 @@
     const modal = block.querySelector('[dpr-rider="modal"]');
     if (!modal) return;
 
-    const riderPremium = parseFloat(hospitalOption.OptionPremium) || 0;
+    const riderMissing = hospitalOption.fromApi === false;
+    const riderPremium = riderMissing ? 0 : (parseFloat(hospitalOption.OptionPremium) || 0);
     modal.querySelectorAll('[dpr-rider="option-premium"]').forEach(el => {
-      el.textContent = `+${formatPremium(riderPremium)}`;
+      el.textContent = riderMissing ? 'n/a' : `+${formatPremium(riderPremium)}`;
     });
+    setRiderMissingNotice(modal, riderMissing, planItem.getAttribute('dpr-results-plan'));
 
     // Fresh state for this quote (no persistence across quotes)
     planItem.dataset.riderSelected = 'false';
@@ -2286,13 +2314,15 @@
         const riderModal = block.querySelector('[dpr-rider="modal"]');
 
         // The rider is offered on every plan that carries the modal markup. When the API
-        // doesn't return the option for a plan, fall back to the configured premium; the
-        // PUT on Continue still goes to the API, which is the source of truth.
+        // doesn't return the option for a plan, the modal still opens but in a "not returned
+        // by the API" state: no premium is invented, the rider can't be added, and Continue
+        // goes to the application without it. This makes a missing option visible during QA
+        // instead of surfacing later inside the application.
         // Checked at plan level (not block level): a plan can have several dynamic blocks and
         // only the card block carries the modal; the stored option must survive every pass.
         const riderExcluded = riderExcludedPlans.includes(String(quote.PlanName).toUpperCase());
         const hospitalOption = riderExcluded ? null : (apiHospitalOption || (riderAllPlans && planItem.querySelector('[dpr-rider="modal"]')
-          ? { OptionName: HOSPITAL_OPTION_NAME, OptionPremium: defaultRiderPremium, Selected: false, fromApi: false }
+          ? { OptionName: HOSPITAL_OPTION_NAME, OptionPremium: null, Selected: false, fromApi: false }
           : null));
         if (riderExcluded) console.log(`Hospital rider excluded for ${quote.PlanName}`);
 
