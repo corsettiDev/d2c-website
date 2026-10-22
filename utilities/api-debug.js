@@ -21,7 +21,9 @@
    *  Disable: ?debug=off
    *
    *  Mount point: [data-api-debug-mount] if the page has one, otherwise
-   *  right after the section that holds the first [dpr-results-plan].
+   *  right after the section that holds the first [dpr-results-plan],
+   *  otherwise the end of <main> (pages without plan cards, e.g. the
+   *  brochure request form and its thank-you page).
    * ------------------------------------------------------------
    */
 
@@ -223,10 +225,14 @@
     const firstPlan = document.querySelector('[dpr-results-plan]');
     const resultsSection = firstPlan && (firstPlan.closest('section') || firstPlan.parentElement);
 
+    const main = document.querySelector('main');
+
     if (explicit) {
       explicit.appendChild(panel);
     } else if (resultsSection && resultsSection.parentElement) {
       resultsSection.insertAdjacentElement('afterend', panel);
+    } else if (main) {
+      main.appendChild(panel);
     } else {
       document.body.appendChild(panel);
     }
