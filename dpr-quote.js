@@ -5,6 +5,14 @@
   // Tracks whether the user clicked a "view all plans" element this page load
   let viewAll = false;
 
+  // API debug panel flag (QA aid). The results page renders the panel; this
+  // page only makes ?debug=api stick to the tab so it survives the redirect.
+  try {
+    const debugFlag = new URLSearchParams(window.location.search).get('debug');
+    if (debugFlag === 'api' || debugFlag === 'on' || debugFlag === '1') sessionStorage.setItem('gs_api_debug', '1');
+    if (debugFlag === 'off' || debugFlag === '0') sessionStorage.removeItem('gs_api_debug');
+  } catch (e) {}
+
   // Fields to track in query parameters
   const TRACKED_FIELDS = [
     'CoverageType',
