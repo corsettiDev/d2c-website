@@ -1,4 +1,4 @@
-/* GreenShield persona page quotes v1.1.0
+/* GreenShield persona page quotes v1.2.0
  *
  * Loads on persona pages (e.g. /en-ca/personal/family) instead of
  * plan-card-display.js + plan-injector.js. Renders plan cards from the CMS
@@ -17,6 +17,8 @@
  * v1.1.0: "View All Plans" links ([data-persona-view-all]) reveal after a
  * successful quote and carry the confirmed inputs + plans=view-all to the
  * quote results page.
+ * v1.2.0: cloned plan cards keep their ids verbatim (gs-st-results-apply-*
+ * tracking contract), matching utilities/plan-injector.js on other pages.
  *
  * Existing legacy scripts and their published versions remain unchanged.
  */
@@ -87,7 +89,7 @@
     const source = page?.querySelector('[dpr-plan-injector-source]');
     if (!page || !form || !modal || !source || page.dataset.personaInitialized) return;
     page.dataset.personaInitialized = 'true';
-    page.dataset.personaVersion = '1.1.0';
+    page.dataset.personaVersion = '1.2.0';
     const all = (selector, root = page) => Array.from(root.querySelectorAll(selector));
     const submit = form.querySelector('[data-form-trigger="get-quote"]');
     const summary = form.querySelector('[data-persona-summary]');
@@ -293,24 +295,16 @@
     // PLAN CARD RENDERING
     // ============================================================
 
-    function uniqueClone(template, suffix) {
+    function cloneCard(template) {
       const clone = template.cloneNode(true);
       clone.setAttribute('data-injected-plan', 'true');
       clone.setAttribute('data-persona-card', '');
       clone.classList.remove('hide');
       clone.style.removeProperty('display');
-      // References are scoped per cloned card; never duplicate IDs across tabs.
-      const ids = new Map();
-      [clone, ...all('[id]', clone)].forEach(el => {
-        if (el.id) { const old = el.id; el.id = `persona-${suffix}-${old}`; if (!ids.has(old)) ids.set(old, el.id); }
-      });
-      all('[for],[aria-controls],[aria-labelledby],[aria-describedby],[href^="#"]', clone).forEach(el => {
-        ['for','aria-controls','aria-labelledby','aria-describedby'].forEach(attr => {
-          if (el.hasAttribute(attr)) el.setAttribute(attr, el.getAttribute(attr).split(/\s+/).map(id => ids.get(id) || id).join(' '));
-        });
-        const anchor = el.getAttribute('href');
-        if (anchor?.startsWith('#') && ids.has(anchor.slice(1))) el.setAttribute('href', '#' + ids.get(anchor.slice(1)));
-      });
+      // IDs are kept verbatim: gs-st-results-apply-* ids are a tracking
+      // contract (GTM / Crazy Egg) and must match across all pages. The hidden
+      // source cards duplicate them, same as utilities/plan-injector.js does on
+      // the other persona pages; nothing on these cards associates by id.
       all('dialog', clone).forEach(d => d.removeAttribute('open'));
       all('[data-tooltip-initialized]', clone).forEach(el => el.removeAttribute('data-tooltip-initialized'));
       all('[data-accordion-initialized]', clone).forEach(el => el.removeAttribute('data-accordion-initialized'));
@@ -341,13 +335,13 @@
       notice.hidden = page.dataset.personaState !== 'ready' || !!quote;
     }
     function refreshCards() {
-      targets.forEach((target, groupIndex) => {
+      targets.forEach(target => {
         const cards = target.getAttribute('dpr-plan-injector').split(',').map(s => s.trim()).filter(Boolean);
         target.replaceChildren();
-        cards.forEach((name, index) => {
+        cards.forEach(name => {
           const template = templates.get(name);
           if (!template) { console.warn('[persona-quote] Missing CMS plan:', name); return; }
-          const card = uniqueClone(template, `${groupIndex}-${index}`);
+          const card = cloneCard(template);
           paintCard(card, quotes.get(name));
           target.appendChild(card);
           window.TooltipSystem?.initialize?.(card);

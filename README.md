@@ -391,7 +391,7 @@ This repository contains custom JavaScript modules that power the Direct-to-Cons
 
 #### Plan Card Rendering
 - Clones cards from `[dpr-plan-injector-source]` into `[dpr-plan-injector="PLAN A, PLAN B"]` targets
-- IDs de-duplicated per clone; tooltips re-initialized via `window.TooltipSystem`
+- Clone ids kept verbatim (the `gs-st-results-apply-*` ids are a tracking contract shared with GTM/Crazy Egg across all pages); tooltips re-initialized via `window.TooltipSystem`
 - Quebec (Province == 10): call button shown, Apply hidden
 - Hospital accommodation checkbox with price toggle (same behavior as dpr-results.js)
 
