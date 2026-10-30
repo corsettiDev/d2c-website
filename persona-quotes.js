@@ -1,4 +1,4 @@
-/* GreenShield persona page quotes v1.2.0
+/* GreenShield persona page quotes v1.3.0
  *
  * Loads on persona pages (e.g. /en-ca/personal/family) instead of
  * plan-card-display.js + plan-injector.js. Renders plan cards from the CMS
@@ -19,6 +19,9 @@
  * quote results page.
  * v1.2.0: cloned plan cards keep their ids verbatim (gs-st-results-apply-*
  * tracking contract), matching utilities/plan-injector.js on other pages.
+ * v1.3.0: hospital rider modal + HQ interstitial flows ported from
+ * dpr-results.js (same markup contract and dataLayer events), per-plan
+ * tracking ids and the data-gs-final-apply marker (see TRACKING-IDS.md).
  *
  * Existing legacy scripts and their published versions remain unchanged.
  */
@@ -38,6 +41,26 @@
   const CORE = ['CoverageType', 'Dependents', 'Age', 'Province'];
   const LOCAL_KEY = 'dpr_local_data';
   const RESULTS_KEY = 'dpr_results_data';
+  // Rider config, same attributes and defaults as dpr-results.js
+  const riderAllPlans = config('data-rider-all-plans', 'true') !== 'false';
+  const riderExcludedPlans = config('data-rider-exclude', '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  const HOSPITAL_OPTION_NAME = 'Hospital Accommodation';
+  const FINAL_APPLY_ATTR = 'data-gs-final-apply';
+
+  // Plan name -> id slug ("ZONE FUNDAMENTAL PLAN" -> "zone-fundamental"); see TRACKING-IDS.md
+  function gsPlanSlug(planName) {
+    return String(planName || '')
+      .toLowerCase()
+      .replace(/\s+plan$/, '')
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+  function formatPremium(value) {
+    const n = parseFloat(value);
+    if (isNaN(n)) return '';
+    return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+  }
 
   // ============================================================
   // LOCALIZATION
@@ -89,7 +112,7 @@
     const source = page?.querySelector('[dpr-plan-injector-source]');
     if (!page || !form || !modal || !source || page.dataset.personaInitialized) return;
     page.dataset.personaInitialized = 'true';
-    page.dataset.personaVersion = '1.2.0';
+    page.dataset.personaVersion = '1.3.0';
     const all = (selector, root = page) => Array.from(root.querySelectorAll(selector));
     const submit = form.querySelector('[data-form-trigger="get-quote"]');
     const summary = form.querySelector('[data-persona-summary]');
@@ -319,7 +342,8 @@
       all('[dpr-results-price="price"]', card).forEach(el => {
         el.textContent = priceAvailable ? String(Math.round(Number(quote.Premium) + (selected && option ? Number(option.OptionPremium) : 0))) : '';
       });
-      all('[dpr-quote-hospital="checkbox-wrapper"]', card).forEach(el => { el.hidden = !priceAvailable || !option; });
+      const riderActive = !!card.dataset.hospitalOption && !!card.querySelector('[dpr-rider="modal"]');
+      all('[dpr-quote-hospital="checkbox-wrapper"]', card).forEach(el => { el.hidden = !priceAvailable || !option || riderActive; });
       all('[dpr-quote-hospital="check-trigger"]', card).forEach(el => { el.checked = selected; });
       all('[dpr-quote-hospital="text-line"]', card).forEach(el => { el.textContent = option ? words.hospital + Math.round(Number(option.OptionPremium)) : ''; });
       all('[dpr-results-apply="button"]', card).forEach(el => {
@@ -334,6 +358,188 @@
       notice.textContent = words.unavailable;
       notice.hidden = page.dataset.personaState !== 'ready' || !!quote;
     }
+    // ============================================================
+    // HOSPITAL RIDER MODAL + HQ INTERSTITIAL
+    // ============================================================
+    // Ported from dpr-results.js so persona pages behave exactly like the
+    // quote page. Same markup contract (one [dpr-rider="modal"] <dialog> per
+    // card, HQ interstitial marked by [data-mu-id="popup_mu_apply_now_btn"]).
+    // State lives on the card's dataset: basePremium, confirmation,
+    // hospitalOption, riderSelected, riderFrom, hospitalConfirmation.
+
+    function setRiderVisible(el, visible, display) {
+      if (!visible) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      if (getComputedStyle(el).display === 'none') el.style.display = display || 'block';
+    }
+    function getStoredHospitalOption(card) {
+      try { return card.dataset.hospitalOption ? JSON.parse(card.dataset.hospitalOption) : null; }
+      catch (_) { return null; }
+    }
+    function findHqDialog(card) {
+      return Array.from(card.querySelectorAll('dialog')).find(d =>
+        d.getAttribute('dpr-rider') !== 'modal' && d.querySelector('[data-mu-id="popup_mu_apply_now_btn"]')
+      ) || null;
+    }
+    function showRiderView(modal, view) {
+      modal.querySelectorAll('[dpr-rider="view-main"]').forEach(el => setRiderVisible(el, view === 'main', 'flex'));
+      modal.querySelectorAll('[dpr-rider="view-exclusions"]').forEach(el => setRiderVisible(el, view === 'exclusions', 'flex'));
+    }
+    function setRiderDetailsOpen(modal, open) {
+      modal.querySelectorAll('[dpr-rider="details"]').forEach(el => setRiderVisible(el, open, 'flex'));
+      modal.querySelectorAll('[dpr-rider="accordion-toggle"]').forEach(el => { el.classList.toggle('is-open', open); });
+    }
+    function setRiderState(card, selected) {
+      card.dataset.riderSelected = selected ? 'true' : 'false';
+      const modal = card.querySelector('[dpr-rider="modal"]');
+      if (!modal) return;
+      const base = parseFloat(card.dataset.basePremium) || 0;
+      const option = getStoredHospitalOption(card);
+      const riderMissing = !!(option && option.fromApi === false);
+      const riderPremium = option && !riderMissing ? (parseFloat(option.OptionPremium) || 0) : 0;
+      const total = selected ? base + riderPremium : base;
+      modal.querySelectorAll('[dpr-rider="total"]').forEach(el => { el.textContent = formatPremium(total); });
+      modal.querySelectorAll('[dpr-rider="add"]').forEach(el => setRiderVisible(el, !selected && !riderMissing, 'inline-flex'));
+      modal.querySelectorAll('[dpr-rider="price-row"]').forEach(el => setRiderVisible(el, !selected && !riderMissing, 'flex'));
+      modal.querySelectorAll('[dpr-rider="missing"]').forEach(el => setRiderVisible(el, riderMissing, 'block'));
+      modal.querySelectorAll('[dpr-rider="remove"]').forEach(el => setRiderVisible(el, selected, 'inline-flex'));
+      modal.querySelectorAll('[dpr-rider="continue"]').forEach(el => { el.setAttribute('data-rider-selected', selected ? 'true' : 'false'); });
+      modal.classList.toggle('is-rider-added', selected);
+    }
+    function setRiderMissingNotice(modal, show, planName) {
+      let notice = modal.querySelector('[dpr-rider="missing"]');
+      if (!notice && show) {
+        notice = document.createElement('div');
+        notice.setAttribute('dpr-rider', 'missing');
+        notice.setAttribute('role', 'status');
+        notice.style.cssText = 'margin:12px 0 0;padding:10px 12px;border-radius:8px;background:#FDE2E2;color:#9B1C1C;font-size:13px;line-height:1.4;';
+        const priceRow = modal.querySelector('[dpr-rider="price-row"]');
+        if (priceRow && priceRow.parentElement) priceRow.insertAdjacentElement('afterend', notice);
+        else (modal.querySelector('[dpr-rider="view-main"]') || modal).appendChild(notice);
+      }
+      if (!notice) return;
+      notice.textContent = `Hospital Accommodation was not returned by the API for ${planName}, so it can't be added here. Continue goes to the application without the rider.`;
+      setRiderVisible(notice, show, 'block');
+    }
+    function openRiderModal(card, from) {
+      const modal = card.querySelector('[dpr-rider="modal"]');
+      if (!modal || typeof modal.showModal !== 'function') return false;
+      card.dataset.riderFrom = from;
+      setRiderDetailsOpen(modal, true);
+      showRiderView(modal, 'main');
+      setRiderState(card, card.dataset.riderSelected === 'true');
+      if (!modal.open) modal.showModal();
+      track('persona_rider_open', { plan_name: card.getAttribute('dpr-results-plan') });
+      return true;
+    }
+    function handleRiderControl(e, control) {
+      const role = control.getAttribute('dpr-rider');
+      const modal = control.closest('[dpr-rider="modal"]');
+      const card = modal && modal.closest('[data-persona-card]');
+      if (!modal || !card) return;
+      consume(e);
+      switch (role) {
+        case 'add': setRiderState(card, true); break;
+        case 'remove': setRiderState(card, false); break;
+        case 'accordion-toggle': setRiderDetailsOpen(modal, !control.classList.contains('is-open')); break;
+        case 'exclusions-open': showRiderView(modal, 'exclusions'); break;
+        case 'exclusions-close': showRiderView(modal, 'main'); break;
+        case 'back': {
+          const exclusionsView = modal.querySelector('[dpr-rider="view-exclusions"]');
+          if (exclusionsView && getComputedStyle(exclusionsView).display !== 'none') { showRiderView(modal, 'main'); break; }
+          modal.close();
+          if (card.dataset.riderFrom === 'hq') {
+            const hq = findHqDialog(card);
+            if (hq && !hq.open) hq.showModal();
+          }
+          break;
+        }
+        case 'continue': apply(control); break;
+        default: break;
+      }
+    }
+    // Route an apply click: rider modal when offered, straight to application otherwise
+    function routeApply(btn) {
+      const card = btn.closest('[data-persona-card]');
+      if (!card) return;
+      const option = getStoredHospitalOption(card);
+      const riderModal = card.querySelector('[dpr-rider="modal"]');
+      if (option && riderModal) {
+        const sourceDialog = btn.closest('dialog');
+        if (sourceDialog) sourceDialog.close();
+        openRiderModal(card, sourceDialog && sourceDialog === findHqDialog(card) ? 'hq' : 'direct');
+        return;
+      }
+      apply(btn);
+    }
+    // Per-plan tracking ids + the data-gs-final-apply marker; contract in TRACKING-IDS.md
+    function stampTrackingIds(card, planName) {
+      const slug = gsPlanSlug(planName);
+      if (!slug) return;
+      const riderModal = card.querySelector('[dpr-rider="modal"]');
+      const riderOffered = !!(riderModal && getStoredHospitalOption(card));
+      card.querySelectorAll('[' + FINAL_APPLY_ATTR + ']').forEach(el => el.removeAttribute(FINAL_APPLY_ATTR));
+      const cardCta = Array.from(card.querySelectorAll('[dpr-results-apply="button"], [data-mu-id="popup_modal_open"]')).find(el => !el.closest('dialog'));
+      if (cardCta) {
+        cardCta.id = `gs-st-results-apply-${slug}`;
+        if (!cardCta.getAttribute('data-tracking')) cardCta.setAttribute('data-tracking', planName);
+      }
+      card.querySelectorAll('dialog').forEach(dialog => {
+        if (dialog === riderModal) return;
+        const hqApply = dialog.querySelector('[data-mu-id="popup_mu_apply_now_btn"]');
+        if (hqApply) {
+          hqApply.id = `gs-st-mu-apply-${slug}`;
+          if (!hqApply.getAttribute('data-tracking')) hqApply.setAttribute('data-tracking', planName);
+          dialog.querySelectorAll('[data-mu-id="popup_mu_back"]').forEach(el => { el.id = `gs-st-mu-back-${slug}`; });
+          dialog.querySelectorAll('[data-mu-id="popup_mu_ga_plan_btn"]').forEach(el => { el.id = `gs-st-mu-ga-plans-${slug}`; });
+        } else {
+          dialog.querySelectorAll('[dpr-results-apply="button"]').forEach(el => { el.id = `gs-st-details-apply-${slug}`; });
+        }
+      });
+      if (riderModal) {
+        riderModal.id = `gs-st-rider-modal-${slug}`;
+        ['back', 'add', 'remove', 'continue'].forEach(role => {
+          riderModal.querySelectorAll(`[dpr-rider="${role}"]`).forEach(el => { el.id = `gs-st-rider-${role}-${slug}`; });
+        });
+      }
+      if (riderOffered) {
+        riderModal.querySelectorAll('[dpr-rider="continue"]').forEach(el => el.setAttribute(FINAL_APPLY_ATTR, slug));
+      } else {
+        card.querySelectorAll('[dpr-results-apply="button"]').forEach(el => {
+          if (!el.closest('[dpr-rider="modal"]')) el.setAttribute(FINAL_APPLY_ATTR, slug);
+        });
+      }
+    }
+    // Store quote data on the card and prepare the rider modal (per refresh, not per repaint)
+    function setupPlanExtras(card, name, quote) {
+      const riderModal = card.querySelector('[dpr-rider="modal"]');
+      const apiOption = quote?.QuoteOptions?.find(o => o.OptionName === HOSPITAL_OPTION_NAME && Number.isFinite(Number(o.OptionPremium)));
+      const riderExcluded = riderExcludedPlans.includes(String(name).toUpperCase());
+      const option = riderExcluded ? null : (apiOption || (riderAllPlans && riderModal && quote
+        ? { OptionName: HOSPITAL_OPTION_NAME, OptionPremium: null, Selected: false, fromApi: false }
+        : null));
+      if (quote) {
+        card.dataset.confirmation = quote.ConfirmationNumber;
+        card.dataset.basePremium = quote.Premium;
+      }
+      if (option) card.dataset.hospitalOption = JSON.stringify(option);
+      else delete card.dataset.hospitalOption;
+      card.dataset.riderSelected = 'false';
+      delete card.dataset.hospitalConfirmation;
+      delete card.dataset.riderFrom;
+      if (riderModal && option) {
+        const riderMissing = option.fromApi === false;
+        const riderPremium = riderMissing ? 0 : (parseFloat(option.OptionPremium) || 0);
+        riderModal.querySelectorAll('[dpr-rider="option-premium"]').forEach(el => {
+          el.textContent = riderMissing ? 'n/a' : `+${formatPremium(riderPremium)}`;
+        });
+        setRiderMissingNotice(riderModal, riderMissing, name);
+        showRiderView(riderModal, 'main');
+        setRiderState(card, false);
+      }
+      stampTrackingIds(card, name);
+    }
+
     function refreshCards() {
       targets.forEach(target => {
         const cards = target.getAttribute('dpr-plan-injector').split(',').map(s => s.trim()).filter(Boolean);
@@ -342,6 +548,7 @@
           const template = templates.get(name);
           if (!template) { console.warn('[persona-quote] Missing CMS plan:', name); return; }
           const card = cloneCard(template);
+          setupPlanExtras(card, name, quotes.get(name));
           paintCard(card, quotes.get(name));
           target.appendChild(card);
           window.TooltipSystem?.initialize?.(card);
@@ -501,7 +708,9 @@
       try {
         let confirmation = quote.ConfirmationNumber;
         const option = hospitalOption(quote);
-        const selected = card.querySelector('[dpr-quote-hospital="check-trigger"]')?.checked;
+        // Rider modal selection (card dataset) or the legacy checkbox on cards without the modal
+        const selected = card.dataset.riderSelected === 'true'
+          || !!card.querySelector('[dpr-quote-hospital="check-trigger"]')?.checked;
         if (selected && option) {
           if (!optionsCache.has(confirmation)) {
             const response = await fetchWithTimeout(`${api}/quote/${encodeURIComponent(confirmation)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify([{OptionName:'Hospital Accommodation', Selected:true}]) });
@@ -510,6 +719,19 @@
             optionsCache.set(confirmation, updated.ConfirmationNumber);
           }
           confirmation = optionsCache.get(confirmation);
+        }
+        // Same event shape as dpr-results.js so rider analytics read identically on every page
+        if (getStoredHospitalOption(card)) {
+          const base = parseFloat(card.dataset.basePremium) || 0;
+          const riderPremium = option ? (parseFloat(option.OptionPremium) || 0) : 0;
+          window.dataLayer = window.dataLayer || [];
+          window.dataLayer.push({
+            event: 'hospital_rider_submit', plan_name: name, rider_selected: selected,
+            rider_premium: riderPremium, base_premium: base,
+            total_premium: selected ? base + riderPremium : base,
+            rider_flow: card.dataset.riderFrom || 'checkbox',
+            rider_offered_by_api: !!option
+          });
         }
         const response = await fetchWithTimeout(`${api}/applicationUrl/${encodeURIComponent(confirmation)}${fr ? '?lang=fr' : ''}`);
         const raw = await response.text();
@@ -552,6 +774,12 @@
           consume(e); contactModal.close(); return;
         }
       }
+      // Rider modal controls (add/remove/back/continue/exclusions/accordion)
+      const riderControl = e.target.closest?.('[dpr-rider]');
+      if (riderControl && riderControl.getAttribute('dpr-rider') !== 'modal' && riderControl.closest('[data-persona-card]')) {
+        handleRiderControl(e, riderControl);
+        return;
+      }
       const target = e.target.closest?.('button,a,[role="button"],[data-form-trigger],[data-persona-retry]');
       if (target?.matches('[data-form-trigger="open-quote-modal"]')) { consume(e); openQuote(target); return; }
       if (target?.matches('[data-form-trigger="get-quote"]')) { consume(e); continueFromDetails(); return; }
@@ -560,12 +788,19 @@
         const dialog = target.closest('dialog');
         if (dialog) { consume(e); dialog.close(); return; }
       }
-      if (target?.matches('[dpr-results-apply="button"]') && target.closest('[data-persona-card]')) { consume(e); apply(target); return; }
+      if (target?.matches('[dpr-results-apply="button"]') && target.closest('[data-persona-card]')) { consume(e); routeApply(target); return; }
       // View-all is a real link; track the click and let navigation proceed.
       if (target?.closest?.('[data-persona-view-all]')) { track('persona_view_all'); return; }
       if (target?.tagName === 'BUTTON' && target.previousElementSibling?.tagName === 'DIALOG') {
         const dialog = target.previousElementSibling;
-        if (target.closest('[data-persona-card]')) { consume(e); if (!dialog.open) dialog.showModal(); return; }
+        if (target.closest('[data-persona-card]')) {
+          consume(e);
+          if (!dialog.open) dialog.showModal();
+          if (dialog.querySelector('[data-mu-id="popup_mu_apply_now_btn"]')) {
+            track('persona_mu_open', { plan_name: target.closest('[data-persona-card]')?.getAttribute('dpr-results-plan') });
+          }
+          return;
+        }
       }
       if (e.target.tagName === 'DIALOG' && e.target.open) {
         const rect = e.target.getBoundingClientRect();
