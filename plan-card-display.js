@@ -14,10 +14,106 @@
   const filterStyle = document.currentScript.getAttribute("data-filter-style") || "showAll";
 
   // Hospital accommodation text prefix
-  const hospitalAccommodationText = document.currentScript.getAttribute("data-hospital-text") || "Add optional hospital accommodation for $";
+  // Localized loader attributes: on fr-CA pages a data-<name>-fr attribute wins over
+  // data-<name>, so one loader element serves both locales without a Webflow locale override.
+  const pageIsFrench = (document.documentElement.lang || "").toLowerCase() === "fr-ca";
+  const localizedAttr = (name) =>
+    (pageIsFrench && document.currentScript.getAttribute(`${name}-fr`)) || document.currentScript.getAttribute(name);
+  const hospitalAccommodationText = localizedAttr("data-hospital-text") || "Add optional hospital accommodation for $";
+
+  // Hospital rider modal: offer it on every plan (default) or only when the API returns the option
+  const riderAllPlans = (document.currentScript.getAttribute("data-rider-all-plans") || "true") !== "false";
+
+
+  // Plans that never get the rider modal (comma-separated PlanNames), e.g. LINK plans
+  // where hospital accommodation is already an included benefit.
+  const riderExcludedPlans = (document.currentScript.getAttribute("data-rider-exclude") || "")
+    .split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
 
   // Apply button text
-  const applyButtonText = document.currentScript.getAttribute("data-apply-button-text") || "Apply Now";
+  const applyButtonText = localizedAttr("data-apply-button-text") || "Apply Now";
+
+  // ============================================================
+  // API DEBUG PANEL (QA aid)
+  // ============================================================
+  // Enabled by ?debug=api on any page (sticky for the tab via
+  // sessionStorage; ?debug=off clears it) or data-api-debug="true" on
+  // the loader embed. Records every midtier call (request, response,
+  // status, timing) to sessionStorage['gs_api_debug_log'] grouped by
+  // page load, then loads utilities/api-debug.js from the same commit
+  // to render the panel below the results. No-op when disabled.
+  const apiDebugEnabled = (function () {
+    try {
+      const flag = new URLSearchParams(window.location.search).get('debug');
+      if (flag === 'api' || flag === 'on' || flag === '1') sessionStorage.setItem('gs_api_debug', '1');
+      if (flag === 'off' || flag === '0') sessionStorage.removeItem('gs_api_debug');
+      return document.currentScript.getAttribute('data-api-debug') === 'true'
+        || sessionStorage.getItem('gs_api_debug') === '1';
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  if (apiDebugEnabled && !window.__gsApiDebugRecorder) {
+    window.__gsApiDebugRecorder = true;
+
+    const apiDebugPageLoad = {
+      id: Date.now(),
+      path: window.location.pathname + window.location.search,
+      script: 'plan-card-display.js'
+    };
+
+    const apiDebugParse = (body) => {
+      if (body === null || body === undefined) return null;
+      try { return JSON.parse(body); } catch (e) { return String(body); }
+    };
+
+    const apiDebugRecord = (entry) => {
+      try {
+        const log = JSON.parse(sessionStorage.getItem('gs_api_debug_log') || '[]');
+        log.push(entry);
+        while (log.length > 25) log.shift();
+        sessionStorage.setItem('gs_api_debug_log', JSON.stringify(log));
+      } catch (e) {
+        console.warn('API debug: could not store log entry', e);
+      }
+      document.dispatchEvent(new CustomEvent('gs-api-debug', { detail: entry }));
+    };
+
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async function (input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      if (!url.startsWith(rootApiURL)) return nativeFetch(input, init);
+
+      const entry = Object.assign({}, apiDebugPageLoad, {
+        at: new Date().toISOString(),
+        method: ((init && init.method) || (input && input.method) || 'GET').toUpperCase(),
+        url,
+        request: apiDebugParse(init && init.body)
+      });
+      const started = performance.now();
+
+      try {
+        const res = await nativeFetch(input, init);
+        entry.status = res.status;
+        entry.ms = Math.round(performance.now() - started);
+        entry.response = apiDebugParse(await res.clone().text());
+        return res;
+      } catch (err) {
+        entry.ms = Math.round(performance.now() - started);
+        entry.error = String(err);
+        throw err;
+      } finally {
+        apiDebugRecord(entry);
+      }
+    };
+
+    const apiDebugScript = document.createElement('script');
+    apiDebugScript.src = document.currentScript.src.replace(/[^/]*$/, 'utilities/api-debug.js');
+    apiDebugScript.dataset.pageLoadId = String(apiDebugPageLoad.id);
+    apiDebugScript.dataset.apiUrl = rootApiURL;
+    document.head.appendChild(apiDebugScript);
+  }
 
   // Localized button state text (French on fr-ca pages)
   function isFrenchPage() {
@@ -1044,6 +1140,13 @@
           quebecBtn.style.display = 'none';
         });
 
+        // Reset hospital rider modal state
+        const riderModal = block.querySelector('[dpr-rider="modal"]');
+        if (riderModal && riderModal.open) riderModal.close();
+        delete planItem.dataset.riderSelected;
+        delete planItem.dataset.hospitalConfirmation;
+        delete planItem.dataset.riderFrom;
+
         // Hide/reset hospital checkbox
         const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
         if (checkboxWrapper) {
@@ -1222,6 +1325,392 @@
     console.log(`Hospital accommodation ${isChecked ? 'added' : 'removed'} for plan. New total: $${displayPrice}`);
   }
 
+  // ============================================================
+  // HOSPITAL RIDER MODAL
+  // ============================================================
+  //
+  // Replaces the inline hospital checkbox with a per-card <dialog>.
+  // Routing (decided in the Apply click handler in fillChart):
+  //   HQ-required plans: Apply now -> HQ interstitial -> "Continue" (dpr-results-apply)
+  //                      -> rider modal -> Continue to application
+  //   GA / no-HQ plans:  Apply now (dpr-results-apply) -> rider modal -> Continue to application
+  //   Plans with no 'Hospital Accommodation' in QuoteOptions never see the rider modal.
+  //
+  // Markup contract — one [dpr-rider="modal"] <dialog> inside each [data-results="dynamic-block"]:
+  //   [dpr-rider="modal"]             the <dialog>
+  //   [dpr-rider="back"]              back link: closes; reopens the HQ interstitial if we came from it
+  //   [dpr-rider="total"]             total monthly premium text ("$224", live: base or base + rider)
+  //   [dpr-rider="accordion-toggle"]  chevron: shows/hides [dpr-rider="details"]; gets .is-open
+  //   [dpr-rider="details"]           collapsible description block (expanded from HQ, collapsed on GA)
+  //   [dpr-rider="option-premium"]    rider premium text ("+$6")
+  //   [dpr-rider="price-row"]         wrapper for "+$6 per month" (hidden once added)
+  //   [dpr-rider="add"]               Add Coverage button (hidden once added)
+  //   [dpr-rider="remove"]            Remove Coverage link (shown once added)
+  //   [dpr-rider="exclusions-open"]   "view exclusions" link
+  //   [dpr-rider="exclusions-close"]  "Back" inside the exclusions view
+  //   [dpr-rider="view-main"]         main view wrapper
+  //   [dpr-rider="view-exclusions"]   exclusions view wrapper (hidden by default)
+  //   [dpr-rider="continue"]          Continue to application (do NOT also give it dpr-results-apply)
+  //
+  // State lives on the plan item's dataset: basePremium, hospitalOption, confirmation,
+  // riderSelected ('true'|'false'), riderFrom ('hq'|'direct'), hospitalConfirmation (cached PUT result).
+
+  const HOSPITAL_OPTION_NAME = 'Hospital Accommodation';
+
+  /**
+   * Show/hide an element. Webflow hides the initial-hidden pieces (remove link,
+   * exclusions view) via class styles, so showing needs an explicit display value.
+   * @param {HTMLElement} el
+   * @param {boolean} visible
+   * @param {string} display - display value to use when the stylesheet says none
+   */
+  function setRiderVisible(el, visible, display) {
+    if (!visible) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    if (getComputedStyle(el).display === 'none') el.style.display = display || 'block';
+  }
+
+  /**
+   * Format a premium for display: whole dollars when there are no cents, otherwise 2 decimals.
+   * @param {number|string} value
+   * @returns {string} e.g. "$224" or "$161.40"
+   */
+  function formatPremium(value) {
+    const n = parseFloat(value);
+    if (isNaN(n)) return '';
+    return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+  }
+
+  /**
+   * Read the stored hospital option for a plan item
+   * @param {HTMLElement} planItem
+   * @returns {Object|null}
+   */
+  function getStoredHospitalOption(planItem) {
+    try {
+      return planItem.dataset.hospitalOption ? JSON.parse(planItem.dataset.hospitalOption) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Find the HQ interstitial dialog in a block (the dialog that is not the rider modal
+   * and carries an apply button).
+   * @param {HTMLElement} block
+   * @returns {HTMLDialogElement|null}
+   */
+  function findHqDialog(block) {
+    return Array.from(block.querySelectorAll('dialog')).find(d =>
+      d.getAttribute('dpr-rider') !== 'modal' && d.querySelector('[dpr-results-apply="button"]')
+    ) || null;
+  }
+
+  /**
+   * Apply the selected/unselected state to the rider modal UI and the live total.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {boolean} selected
+   */
+  function setRiderState(planItem, block, selected) {
+    planItem.dataset.riderSelected = selected ? 'true' : 'false';
+
+    const modal = block.querySelector('[dpr-rider="modal"]');
+    if (!modal) return;
+
+    const base = parseFloat(planItem.dataset.basePremium) || 0;
+    const option = getStoredHospitalOption(planItem);
+    const riderMissing = !!(option && option.fromApi === false);
+    const riderPremium = option && !riderMissing ? (parseFloat(option.OptionPremium) || 0) : 0;
+    const total = selected ? base + riderPremium : base;
+
+    modal.querySelectorAll('[dpr-rider="total"]').forEach(el => { el.textContent = formatPremium(total); });
+    modal.querySelectorAll('[dpr-rider="add"]').forEach(el => setRiderVisible(el, !selected && !riderMissing, 'inline-flex'));
+    modal.querySelectorAll('[dpr-rider="price-row"]').forEach(el => setRiderVisible(el, !selected && !riderMissing, 'flex'));
+    modal.querySelectorAll('[dpr-rider="missing"]').forEach(el => setRiderVisible(el, riderMissing, 'block'));
+    modal.querySelectorAll('[dpr-rider="remove"]').forEach(el => setRiderVisible(el, selected, 'inline-flex'));
+    modal.querySelectorAll('[dpr-rider="continue"]').forEach(el => {
+      el.setAttribute('data-rider-selected', selected ? 'true' : 'false');
+    });
+    modal.classList.toggle('is-rider-added', selected);
+
+    console.log(`Hospital rider ${selected ? 'added' : 'removed'} for ${planItem.getAttribute('dpr-results-plan')}. Total: ${formatPremium(total)}`);
+  }
+
+  /**
+   * Show or hide the "not returned by the API" notice inside the rider modal. The notice
+   * element is created on first use (after the price row) so the Webflow markup needs no change.
+   * @param {HTMLElement} modal
+   * @param {boolean} show
+   * @param {string} planName
+   */
+  function setRiderMissingNotice(modal, show, planName) {
+    let notice = modal.querySelector('[dpr-rider="missing"]');
+    if (!notice && show) {
+      notice = document.createElement('div');
+      notice.setAttribute('dpr-rider', 'missing');
+      notice.setAttribute('role', 'status');
+      notice.style.cssText = 'margin:12px 0 0;padding:10px 12px;border-radius:8px;background:#FDE2E2;color:#9B1C1C;font-size:13px;line-height:1.4;';
+      const priceRow = modal.querySelector('[dpr-rider="price-row"]');
+      if (priceRow && priceRow.parentElement) {
+        priceRow.insertAdjacentElement('afterend', notice);
+      } else {
+        (modal.querySelector('[dpr-rider="view-main"]') || modal).appendChild(notice);
+      }
+    }
+    if (!notice) return;
+    notice.textContent = `Hospital Accommodation was not returned by the API for ${planName} (no "Hospital Accommodation" entry in QuoteOptions), so it can't be added here. Continue goes to the application without the rider. Check the quoteset response in the ?debug=api panel.`;
+    setRiderVisible(notice, show, 'block');
+  }
+
+  /**
+   * Switch the rider modal between its main view and the exclusions view
+   * @param {HTMLElement} modal
+   * @param {'main'|'exclusions'} view
+   */
+  function showRiderView(modal, view) {
+    modal.querySelectorAll('[dpr-rider="view-main"]').forEach(el => setRiderVisible(el, view === 'main', 'flex'));
+    modal.querySelectorAll('[dpr-rider="view-exclusions"]').forEach(el => setRiderVisible(el, view === 'exclusions', 'flex'));
+  }
+
+  /**
+   * Expand or collapse the rider description accordion
+   * @param {HTMLElement} modal
+   * @param {boolean} open
+   */
+  function setRiderDetailsOpen(modal, open) {
+    modal.querySelectorAll('[dpr-rider="details"]').forEach(el => setRiderVisible(el, open, 'flex'));
+    modal.querySelectorAll('[dpr-rider="accordion-toggle"]').forEach(el => { el.classList.toggle('is-open', open); });
+  }
+
+  /**
+   * Open the rider modal for a plan.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {'hq'|'direct'} from - 'hq' when arriving from the HQ interstitial
+   * @returns {boolean} true if a modal was opened
+   */
+  function openRiderModal(planItem, block, from) {
+    const modal = block.querySelector('[dpr-rider="modal"]');
+    if (!modal || typeof modal.showModal !== 'function') return false;
+
+    planItem.dataset.riderFrom = from;
+
+    // Description starts expanded on every route (user can collapse it via the chevron)
+    setRiderDetailsOpen(modal, true);
+    showRiderView(modal, 'main');
+    setRiderState(planItem, block, planItem.dataset.riderSelected === 'true');
+
+    if (!modal.open) modal.showModal();
+    return true;
+  }
+
+  /**
+   * Populate and wire the rider modal for a plan (once per fillChart).
+   * Clones the dialog to drop stale listeners, mirroring the apply-button pattern.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {Object} hospitalOption - The QuoteOptions entry for Hospital Accommodation
+   */
+  function setupRiderModal(planItem, block, hospitalOption) {
+    const modal = block.querySelector('[dpr-rider="modal"]');
+    if (!modal) return;
+
+    const riderMissing = hospitalOption.fromApi === false;
+    const riderPremium = riderMissing ? 0 : (parseFloat(hospitalOption.OptionPremium) || 0);
+    modal.querySelectorAll('[dpr-rider="option-premium"]').forEach(el => {
+      el.textContent = riderMissing ? 'n/a' : `+${formatPremium(riderPremium)}`;
+    });
+    setRiderMissingNotice(modal, riderMissing, planItem.getAttribute('dpr-results-plan'));
+
+    // Fresh state for this quote (no persistence across quotes)
+    planItem.dataset.riderSelected = 'false';
+    delete planItem.dataset.hospitalConfirmation;
+    delete planItem.dataset.riderFrom;
+    showRiderView(modal, 'main');
+    setRiderState(planItem, block, false);
+
+    // No per-element listeners here: every control is handled by the document-level
+    // delegated handler (installRiderDelegation) so cards cloned later by
+    // plan-injector.js keep working.
+
+    console.log(`Hospital rider modal ready for ${planItem.getAttribute('dpr-results-plan')}: ${formatPremium(riderPremium)}`);
+  }
+
+  /**
+   * One document-level click handler (capture phase) for Apply buttons and every
+   * rider-modal control. Runs before any per-element handler — including the ones
+   * plan-injector.js attaches to cloned cards — and stops propagation so those
+   * legacy handlers never fire. All state lives on the plan item's dataset, which
+   * cloneNode copies, so injected clones behave exactly like the originals.
+   */
+  function handleRiderDelegatedClick(e) {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+
+    // --- Apply buttons: card buttons and the HQ interstitial's Continue ---
+    const applyBtn = target.closest('[dpr-results-apply="button"]');
+    if (applyBtn) {
+      const planItem = applyBtn.closest('[dpr-results-plan]');
+      if (!planItem) return;
+      if (applyBtn.closest('[dpr-rider="modal"]')) return; // never used inside the rider modal
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const block = applyBtn.closest('[data-results="dynamic-block"]') || planItem;
+      const riderModal = planItem.querySelector('[dpr-rider="modal"]');
+      const option = getStoredHospitalOption(planItem);
+
+      if (option && riderModal) {
+        const hqDialog = applyBtn.closest('dialog');
+        if (hqDialog) hqDialog.close();
+        const modalBlock = riderModal.closest('[data-results="dynamic-block"]') || planItem;
+        openRiderModal(planItem, modalBlock, hqDialog ? 'hq' : 'direct');
+        return;
+      }
+
+      proceedToApplication(planItem, block, applyBtn);
+      return;
+    }
+
+    // --- Rider modal controls ---
+    const control = target.closest('[dpr-rider]');
+    if (!control) return;
+    const role = control.getAttribute('dpr-rider');
+    if (role === 'modal') return;
+
+    const modal = control.closest('[dpr-rider="modal"]');
+    const planItem = modal && modal.closest('[dpr-results-plan]');
+    if (!modal || !planItem) return;
+    const block = modal.closest('[data-results="dynamic-block"]') || planItem;
+
+    switch (role) {
+      case 'add':
+        e.preventDefault(); e.stopPropagation();
+        setRiderState(planItem, block, true);
+        break;
+      case 'remove':
+        e.preventDefault(); e.stopPropagation();
+        setRiderState(planItem, block, false);
+        break;
+      case 'accordion-toggle':
+        e.preventDefault(); e.stopPropagation();
+        setRiderDetailsOpen(modal, !control.classList.contains('is-open'));
+        break;
+      case 'exclusions-open':
+        e.preventDefault(); e.stopPropagation();
+        showRiderView(modal, 'exclusions');
+        break;
+      case 'exclusions-close':
+        e.preventDefault(); e.stopPropagation();
+        showRiderView(modal, 'main');
+        break;
+      case 'back': {
+        e.preventDefault(); e.stopPropagation();
+        const exclusionsView = modal.querySelector('[dpr-rider="view-exclusions"]');
+        if (exclusionsView && getComputedStyle(exclusionsView).display !== 'none') {
+          showRiderView(modal, 'main');
+          break;
+        }
+        modal.close();
+        if (planItem.dataset.riderFrom === 'hq') {
+          const hq = findHqDialog(block);
+          if (hq && !hq.open) hq.showModal();
+        }
+        break;
+      }
+      case 'continue':
+        e.preventDefault(); e.stopPropagation();
+        proceedToApplication(planItem, block, control);
+        break;
+      default:
+        break;
+    }
+  }
+
+  function installRiderDelegation() {
+    if (window.__dprRiderDelegationInstalled) return;
+    window.__dprRiderDelegationInstalled = true;
+    document.addEventListener('click', handleRiderDelegatedClick, true);
+  }
+
+  /**
+   * Push the rider decision to the dataLayer once, at submission (not per toggle).
+   * Only fires for plans where the rider was offered.
+   * @param {HTMLElement} planItem
+   * @param {boolean} riderSelected
+   */
+  function pushRiderTracking(planItem, riderSelected) {
+    try {
+      const option = getStoredHospitalOption(planItem);
+      if (!option) return;
+
+      const base = parseFloat(planItem.dataset.basePremium) || 0;
+      const riderPremium = parseFloat(option.OptionPremium) || 0;
+
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'hospital_rider_submit',
+        plan_name: planItem.getAttribute('dpr-results-plan'),
+        rider_selected: riderSelected,
+        rider_premium: riderPremium,
+        base_premium: base,
+        total_premium: riderSelected ? base + riderPremium : base,
+        rider_flow: planItem.dataset.riderFrom || 'checkbox',
+        rider_offered_by_api: option.fromApi !== false
+      });
+    } catch (e) {
+      console.warn('Rider tracking push failed:', e);
+    }
+  }
+
+  /**
+   * Final hand-off: apply the rider via PUT when selected (cached), fetch the
+   * application URL and redirect. Shared by the Apply buttons and the rider modal's Continue.
+   * @param {HTMLElement} planItem
+   * @param {HTMLElement} block
+   * @param {HTMLElement} btn - The button that was clicked (for loading/error text)
+   */
+  async function proceedToApplication(planItem, block, btn) {
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = loadingText();
+
+    try {
+      const baseConfirmation = btn.dataset.confirmation || planItem.dataset.confirmation;
+      let confirmationToUse = baseConfirmation;
+
+      // Rider selected via the modal, or via the legacy checkbox where the modal isn't present
+      const legacyCheckbox = block.querySelector('[dpr-quote-hospital="check-trigger"]');
+      const riderSelected = planItem.dataset.riderSelected === 'true'
+        || (!!legacyCheckbox && legacyCheckbox.checked);
+
+      if (riderSelected && getStoredHospitalOption(planItem)) {
+        if (planItem.dataset.hospitalConfirmation) {
+          confirmationToUse = planItem.dataset.hospitalConfirmation;
+        } else {
+          confirmationToUse = await updateQuoteOption(baseConfirmation, HOSPITAL_OPTION_NAME, true);
+          planItem.dataset.hospitalConfirmation = confirmationToUse;
+        }
+      }
+
+      pushRiderTracking(planItem, riderSelected);
+
+      const url = await getApplicationUrl(confirmationToUse);
+      const finalUrl = decorateWithGtmAutoLinker(url);
+
+      // Short delay for GA hit to flush
+      setTimeout(() => {
+        window.location.assign(finalUrl);
+      }, 200);
+    } catch (err) {
+      console.error('Error getting application URL:', err);
+      btn.textContent = errorRetryText();
+      btn.disabled = false;
+    }
+  }
+
   /**
    * Populate plan prices and wire up Apply Now buttons
    * @param {Object} resultsData - Full dpr_results_data structure
@@ -1270,16 +1759,41 @@
         }
 
         // Check for hospital accommodation option
-        const hospitalOption = quote.QuoteOptions?.find(
+        const apiHospitalOption = quote.QuoteOptions?.find(
           option => option.OptionName === 'Hospital Accommodation'
         );
 
         const checkboxWrapper = block.querySelector('[dpr-quote-hospital="checkbox-wrapper"]');
+        const riderModal = block.querySelector('[dpr-rider="modal"]');
 
-        if (hospitalOption && checkboxWrapper) {
-          // Store hospital option data and base premium for calculations
+        // The rider is offered on every plan that carries the modal markup. When the API
+        // doesn't return the option for a plan, the modal still opens but in a "not returned
+        // by the API" state: no premium is invented, the rider can't be added, and Continue
+        // goes to the application without it. This makes a missing option visible during QA
+        // instead of surfacing later inside the application.
+        // Checked at plan level (not block level): a plan can have several dynamic blocks and
+        // only the card block carries the modal; the stored option must survive every pass.
+        const riderExcluded = riderExcludedPlans.includes(String(quote.PlanName).toUpperCase());
+        const hospitalOption = riderExcluded ? null : (apiHospitalOption || (riderAllPlans && planItem.querySelector('[dpr-rider="modal"]')
+          ? { OptionName: HOSPITAL_OPTION_NAME, OptionPremium: null, Selected: false, fromApi: false }
+          : null));
+        if (riderExcluded) console.log(`Hospital rider excluded for ${quote.PlanName}`);
+
+        // Store quote data needed by the rider modal and the application hand-off
+        planItem.dataset.confirmation = quote.ConfirmationNumber;
+        planItem.dataset.basePremium = quote.Premium;
+        if (hospitalOption) {
           planItem.dataset.hospitalOption = JSON.stringify(hospitalOption);
-          planItem.dataset.basePremium = quote.Premium; // Store original price
+        } else {
+          delete planItem.dataset.hospitalOption;
+        }
+
+        if (hospitalOption && riderModal) {
+          // Rider modal present: wire it up and keep the legacy checkbox hidden
+          setupRiderModal(planItem, block, hospitalOption);
+          if (checkboxWrapper) checkboxWrapper.style.display = 'none';
+        } else if (hospitalOption && checkboxWrapper) {
+          // Legacy checkbox (blocks without the rider modal markup)
 
           // Show checkbox UI
           checkboxWrapper.style.display = 'block';
@@ -1323,45 +1837,8 @@
           // Set confirmation number on the cloned element
           newBtn.dataset.confirmation = quote.ConfirmationNumber;
 
-          newBtn.addEventListener('click', async (e) => {
-            e.preventDefault();
-
-            const originalText = newBtn.textContent;
-            newBtn.disabled = true;
-            newBtn.textContent = loadingText();
-
-            try {
-              // If hospital accommodation is checked, swap in the updated
-              // quote's confirmation number (cached after the first PUT).
-              let confirmationToUse = newBtn.dataset.confirmation;
-              const hospitalCheckbox = block.querySelector('[dpr-quote-hospital="check-trigger"]');
-
-              if (hospitalCheckbox && hospitalCheckbox.checked) {
-                if (newBtn.dataset.hospitalConfirmation) {
-                  confirmationToUse = newBtn.dataset.hospitalConfirmation;
-                } else {
-                  confirmationToUse = await updateQuoteOption(
-                    newBtn.dataset.confirmation,
-                    'Hospital Accommodation',
-                    true
-                  );
-                  newBtn.dataset.hospitalConfirmation = confirmationToUse;
-                }
-              }
-
-              const url = await getApplicationUrl(confirmationToUse);
-              const finalUrl = decorateWithGtmAutoLinker(url);
-
-              // Short delay for GA hit to flush
-              setTimeout(() => {
-                window.location.assign(finalUrl);
-              }, 200);
-            } catch (err) {
-              console.error('Error getting application URL:', err);
-              newBtn.textContent = errorRetryText();
-              newBtn.disabled = false;
-            }
-          });
+          // Click routing (rider modal vs. straight to application) is handled by the
+          // document-level delegated handler — see handleRiderDelegatedClick.
         });
 
         // Set button visibility based on Province
@@ -1449,6 +1926,7 @@
    * Main initialization function
    */
   function initialize() {
+    installRiderDelegation();
     console.log('Plan Card Display: Initializing...');
 
     // Prefill forms from localStorage
