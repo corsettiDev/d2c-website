@@ -1889,6 +1889,93 @@
     document.addEventListener('click', handleRiderDelegatedClick, true);
   }
 
+  // ============================================================
+  // TRACKING IDS (contract: TRACKING-IDS.md)
+  // ============================================================
+  //
+  // Every clickable step of the apply flow carries a deterministic id:
+  //   gs-st-results-apply-{plan}   card CTA (direct apply or HQ opener)
+  //   gs-st-details-apply-{plan}   Apply inside the "See more details" dialog
+  //   gs-st-mu-back|apply|ga-plans-{plan}      HQ interstitial controls
+  //   gs-st-rider-back|add|remove|continue-{plan}  rider modal controls
+  // data-gs-final-apply="{plan}" marks every button whose click calls the API
+  // and redirects to the application: the rider Continue when the rider is
+  // offered, otherwise each direct apply button. GTM/Crazy Egg target
+  // [data-gs-final-apply] once and read the plan from its value.
+
+  const FINAL_APPLY_ATTR = 'data-gs-final-apply';
+
+  /**
+   * Plan name -> id slug. "ZONE FUNDAMENTAL PLAN" -> "zone-fundamental",
+   * "LINK 1" -> "link-1". Matches the CMS Plan Tag suffixes.
+   * @param {string} planName
+   * @returns {string}
+   */
+  function gsPlanSlug(planName) {
+    return String(planName || '')
+      .toLowerCase()
+      .replace(/\s+plan$/, '')
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  /**
+   * Stamp the tracking ids and the final-apply marker for one plan card.
+   * Runs after the card's dataset is populated in fillChart, so clones made
+   * later by plan-injector.js copy the finished attributes.
+   * @param {HTMLElement} planItem
+   * @param {string} planName
+   */
+  function stampPlanTrackingIds(planItem, planName) {
+    const slug = gsPlanSlug(planName);
+    if (!slug) return;
+
+    const riderModal = planItem.querySelector('[dpr-rider="modal"]');
+    const riderOffered = !!(riderModal && getStoredHospitalOption(planItem));
+
+    planItem.querySelectorAll('[' + FINAL_APPLY_ATTR + ']').forEach(el => el.removeAttribute(FINAL_APPLY_ATTR));
+
+    // Card CTA: the apply button (GA plans) or the HQ-popup opener (HQ plans), outside any dialog
+    const cardCta = Array.from(planItem.querySelectorAll('[dpr-results-apply="button"], [data-mu-id="popup_modal_open"]'))
+      .find(el => !el.closest('dialog'));
+    if (cardCta) {
+      cardCta.id = `gs-st-results-apply-${slug}`;
+      if (!cardCta.getAttribute('data-tracking')) cardCta.setAttribute('data-tracking', planName);
+    }
+
+    planItem.querySelectorAll('dialog').forEach(dialog => {
+      if (dialog === riderModal) return;
+      const hqApply = dialog.querySelector('[data-mu-id="popup_mu_apply_now_btn"]');
+      if (hqApply) {
+        hqApply.id = `gs-st-mu-apply-${slug}`;
+        if (!hqApply.getAttribute('data-tracking')) hqApply.setAttribute('data-tracking', planName);
+        dialog.querySelectorAll('[data-mu-id="popup_mu_back"]').forEach(el => { el.id = `gs-st-mu-back-${slug}`; });
+        dialog.querySelectorAll('[data-mu-id="popup_mu_ga_plan_btn"]').forEach(el => { el.id = `gs-st-mu-ga-plans-${slug}`; });
+      } else {
+        // "See more details" dialog
+        dialog.querySelectorAll('[dpr-results-apply="button"]').forEach(el => { el.id = `gs-st-details-apply-${slug}`; });
+      }
+    });
+
+    if (riderModal) {
+      riderModal.id = `gs-st-rider-modal-${slug}`;
+      ['back', 'add', 'remove', 'continue'].forEach(role => {
+        riderModal.querySelectorAll(`[dpr-rider="${role}"]`).forEach(el => { el.id = `gs-st-rider-${role}-${slug}`; });
+      });
+    }
+
+    // Final-apply marker: the buttons whose click calls the API and redirects.
+    if (riderOffered) {
+      riderModal.querySelectorAll('[dpr-rider="continue"]').forEach(el => el.setAttribute(FINAL_APPLY_ATTR, slug));
+    } else {
+      // No rider step: every apply button outside the rider modal proceeds directly
+      planItem.querySelectorAll('[dpr-results-apply="button"]').forEach(el => {
+        if (!el.closest('[dpr-rider="modal"]')) el.setAttribute(FINAL_APPLY_ATTR, slug);
+      });
+    }
+  }
+
   /**
    * Push the rider decision to the dataLayer once, at submission (not per toggle).
    * Only fires for plans where the rider was offered.
@@ -2100,6 +2187,11 @@
         // Set button visibility based on Province
         setPlanButtonVisibility(block, isQuebec);
       });
+
+      // Stamp per-plan tracking ids + the data-gs-final-apply marker (TRACKING-IDS.md).
+      // Must run after the apply-button cloneNode pass above so the ids land on
+      // the live elements.
+      stampPlanTrackingIds(planItem, quote.PlanName);
     });
 
     console.log('Chart population complete');
